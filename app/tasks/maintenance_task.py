@@ -1,6 +1,6 @@
 """Scheduled maintenance jobs for authentication and presence data."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -10,7 +10,7 @@ from app.models.token_blacklist import TokenBlacklist
 
 
 def now():
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def cleanup_expired_tokens():

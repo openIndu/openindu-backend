@@ -1,5 +1,5 @@
 """User administration API."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -121,7 +121,7 @@ async def change_role(user_id: int, body: RoleChange, db: Session = Depends(get_
 async def blacklist(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user: raise HTTPException(404, "用户不存在")
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(UTC).replace(tzinfo=None)
     user.is_active = False; user.is_blacklisted = True; user.blacklisted_at = now; user.blacklisted_by = admin.id; user.tokens_invalidated_at = now
     # Deactivate all login sessions for this user
     db.query(LoginSession).filter(LoginSession.user_id == user_id, LoginSession.is_active.is_(True)).update(
@@ -146,7 +146,7 @@ async def unblacklist(user_id: int, db: Session = Depends(get_db), admin: User =
 async def force_logout(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user: raise HTTPException(404, "用户不存在")
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(UTC).replace(tzinfo=None)
     user.tokens_invalidated_at = now
     # Deactivate all login sessions for this user
     db.query(LoginSession).filter(LoginSession.user_id == user_id, LoginSession.is_active.is_(True)).update(
@@ -173,7 +173,7 @@ async def delete_user(user_id: int, db: Session = Depends(get_db), admin: User =
         raise HTTPException(409, "用户已删除")
     if user.id == admin.id:
         raise HTTPException(400, "不能删除当前登录的管理员账号")
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(UTC).replace(tzinfo=None)
     user.deleted_at = now
     user.is_active = False
     user.tokens_invalidated_at = now

@@ -1,5 +1,5 @@
 """Middleware that updates login session activity."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, Request
 from jose import JWTError
@@ -13,7 +13,7 @@ from app.services.geo_service import resolve_ip_geo
 
 
 def _now():
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _client_ip(request: Request) -> str:

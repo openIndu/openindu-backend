@@ -1,5 +1,5 @@
 """Middleware that rejects revoked JWTs."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import Request
 from jose import JWTError, jwt
@@ -35,7 +35,7 @@ class TokenBlacklistMiddleware(BaseHTTPMiddleware):
                         if user and user.tokens_invalidated_at:
                             iat = payload.get("iat")
                             if iat:
-                                token_issued_at = datetime.fromtimestamp(iat, tz=timezone.utc).replace(tzinfo=None)
+                                token_issued_at = datetime.fromtimestamp(iat, tz=UTC).replace(tzinfo=None)
                                 if user.tokens_invalidated_at > token_issued_at:
                                     return JSONResponse(status_code=401, content={"code": 401, "detail": "Token 已被撤销（强制登出）"})
                 finally:
