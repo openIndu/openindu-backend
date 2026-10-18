@@ -36,7 +36,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install ruff
+      # Pinned on purpose: ruff changes its defaults between releases, and the unpinned install
+      # turned main red overnight (2026-10, UP017) with no code change. Bump it deliberately.
+      - run: pip install ruff==0.17.1
       - run: ruff check app/
 
   test:

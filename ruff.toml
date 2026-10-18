@@ -1,4 +1,8 @@
 line-length = 120
+# Python 3.11 is what runs in production (Dockerfile) and in CI. Without an explicit target,
+# ruff uses its own default, which moved from py310 to py311 in 0.17 and turned UP017 red
+# without any code change.
+target-version = "py311"
 exclude = ["alembic/"]
 
 [lint]
