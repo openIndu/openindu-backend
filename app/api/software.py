@@ -1,6 +1,6 @@
 """Software package and version API."""
 import math
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
@@ -265,7 +265,7 @@ async def upload_init(body: UploadInitBody, db: Session = Depends(get_db), admin
         "content_type": body.content_type,
         "size": body.size,
         "software_id": body.software_id,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=UPLOAD_TOKEN_EXPIRE_HOURS),
+        "exp": datetime.now(UTC) + timedelta(hours=UPLOAD_TOKEN_EXPIRE_HOURS),
     }
 
     if body.size > part_size:

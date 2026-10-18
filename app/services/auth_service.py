@@ -3,7 +3,7 @@ import logging
 import random
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
 from jose import jwt
@@ -21,7 +21,7 @@ PHONE_RE = re.compile(r"^1\d{10}$")
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def decode_token(token: str) -> dict:
@@ -208,7 +208,7 @@ class AuthService:
         exp = payload.get("exp")
         if not jti or not user_id or db.query(TokenBlacklist).filter(TokenBlacklist.jti == jti).first():
             return
-        expires_at = datetime.fromtimestamp(exp, tz=timezone.utc).replace(tzinfo=None) if exp else utcnow()
+        expires_at = datetime.fromtimestamp(exp, tz=UTC).replace(tzinfo=None) if exp else utcnow()
         db.add(TokenBlacklist(jti=jti, user_id=int(user_id), token_type=token_type, reason=reason, expires_at=expires_at))
         db.commit()
 
@@ -225,7 +225,7 @@ class AuthService:
         if user.tokens_invalidated_at:
             iat = payload.get("iat")
             if iat:
-                token_issued_at = datetime.fromtimestamp(iat, tz=timezone.utc).replace(tzinfo=None)
+                token_issued_at = datetime.fromtimestamp(iat, tz=UTC).replace(tzinfo=None)
                 if user.tokens_invalidated_at > token_issued_at:
                     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token 已被撤销（强制登出）")
         self.blacklist_token(db, payload, reason="refresh_rotation")

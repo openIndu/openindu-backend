@@ -1,7 +1,7 @@
 """FastAPI Web REST application on port 8004."""
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -124,4 +124,4 @@ for router in [auth.router, users.router, stats.router, admin.router, documents.
 
 @app.get("/api/v1/health")
 async def health():
-    return {"code": 200, "message": "ok", "data": {"service": "openIndu-backend-web", "timestamp": datetime.now(timezone.utc).isoformat()}}
+    return {"code": 200, "message": "ok", "data": {"service": "openIndu-backend-web", "timestamp": datetime.now(UTC).isoformat()}}

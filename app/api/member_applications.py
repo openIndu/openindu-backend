@@ -1,5 +1,5 @@
 """Member application API — user applies, admin approves."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -22,7 +22,7 @@ def _audit(db: Session, admin_id: int, target_user_id: int, action: str, detail:
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 # ── 用户侧 ────────────────────────────────────────────────────────────────────

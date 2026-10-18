@@ -1,5 +1,5 @@
 """Online statistics and dashboard API."""
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -33,12 +33,12 @@ def _cst_month(timestamp):
 
 
 def _now():
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _to_naive_utc(dt: datetime) -> datetime:
     """Convert a timezone-aware datetime to naive UTC for DB comparison."""
-    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt.astimezone(UTC).replace(tzinfo=None)
 
 
 def _today_range_utc() -> tuple[datetime, datetime]:

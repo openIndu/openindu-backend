@@ -1,5 +1,5 @@
 """FastAPI dependency injection helpers."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -47,7 +47,7 @@ async def get_current_user(
     if user.tokens_invalidated_at:
         iat = payload.get("iat")
         if iat:
-            token_issued_at = datetime.fromtimestamp(iat, tz=timezone.utc).replace(tzinfo=None)
+            token_issued_at = datetime.fromtimestamp(iat, tz=UTC).replace(tzinfo=None)
             if user.tokens_invalidated_at > token_issued_at:
                 return None
     return user
