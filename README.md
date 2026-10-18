@@ -33,8 +33,8 @@ openIndu Backend is the server-side platform powering the [openIndu](https://ope
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/openIndu/openIndu-backend.git
-cd openIndu-backend
+git clone https://github.com/openIndu/openindu-backend.git
+cd openindu-backend
 
 # 2. Create .env from the template
 cp .env.example .env
@@ -72,7 +72,7 @@ uvicorn app.mcp_app:app --reload --port 8005
 ## Project Structure
 
 ```
-openIndu-backend/
+openindu-backend/
 ├── app/
 │   ├── api/              # REST API route handlers
 │   │   ├── auth.py       #   Authentication (SMS login)

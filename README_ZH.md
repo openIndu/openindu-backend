@@ -33,8 +33,8 @@ openIndu Backend 是 [openIndu](https://openindu.com) 开源工业自动化生�
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/openIndu/openIndu-backend.git
-cd openIndu-backend
+git clone https://github.com/openIndu/openindu-backend.git
+cd openindu-backend
 
 # 2. 从模板创建 .env
 cp .env.example .env
@@ -72,7 +72,7 @@ uvicorn app.mcp_app:app --reload --port 8005
 ## 项目结构
 
 ```
-openIndu-backend/
+openindu-backend/
 ├── app/
 │   ├── api/              # REST API 路由处理
 │   │   ├── auth.py       #   认证（短信登录）
