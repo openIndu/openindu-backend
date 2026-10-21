@@ -11,6 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.captcha_challenge import CaptchaChallenge
 from app.models.login_session import LoginSession
 from app.models.sms_code import SmsCode
 from app.models.token_blacklist import TokenBlacklist
@@ -19,6 +20,8 @@ from app.services.sms_service import sms_service
 
 logger = logging.getLogger(__name__)
 PHONE_RE = re.compile(r"^1\d{10}$")
+# No 0/O, 1/I/L look-alikes so a rendered captcha is unambiguous to humans.
+CAPTCHA_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
 
 
 def utcnow() -> datetime:
@@ -78,7 +81,56 @@ class AuthService:
             "refresh_expires_at": refresh_expires_at,
         }
 
-    def send_code(self, db: Session, phone: str) -> None:
+    def get_captcha(self, db: Session, ip: str | None = None) -> dict:
+        """Create an image captcha challenge; returns captcha_id + PNG data URI."""
+        now = utcnow()
+        # Opportunistic cleanup keeps the table small without a scheduler job.
+        db.query(CaptchaChallenge).filter(CaptchaChallenge.expires_at < now).delete()
+        answer = "".join(random.choices(CAPTCHA_ALPHABET, k=4))
+        challenge = CaptchaChallenge(answer=answer, expires_at=now + timedelta(minutes=5), ip_address=ip)
+        db.add(challenge)
+        db.commit()
+        db.refresh(challenge)
+        return {"captcha_id": challenge.id, "image": self._render_captcha(answer), "expires_in": 300}
+
+    @staticmethod
+    def _render_captcha(answer: str) -> str:
+        """Render the challenge text as a PNG data URI. Lazy import mirrors
+        _send_sms so the unit-test import path stays dependency-light."""
+        import base64
+        import io
+
+        from captcha.image import ImageCaptcha
+
+        buffer = io.BytesIO()
+        ImageCaptcha(width=160, height=60).write(answer, buffer)
+        return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+
+    def verify_captcha(self, db: Session, captcha_id: int | None, text: str | None) -> None:
+        """Consume and check a captcha challenge; raises 400 on any mismatch.
+
+        The challenge is single-use regardless of outcome — consumed even on a
+        wrong guess — so a captured id cannot be replayed or brute-forced.
+        """
+        record = None
+        if captcha_id is not None:
+            record = db.query(CaptchaChallenge).filter(CaptchaChallenge.id == captcha_id).first()
+        valid = (
+            record is not None
+            and not record.is_used
+            and record.expires_at > utcnow()
+            and bool(text)
+            and record.answer == text.strip().upper()
+        )
+        if record is not None:
+            record.is_used = True
+            db.commit()
+        if not valid:
+            raise HTTPException(status_code=400, detail="图形验证码错误或已过期，请刷新后重试")
+
+    def send_code(self, db: Session, phone: str, captcha_id: int | None = None, captcha_text: str | None = None) -> None:
+        if settings.CAPTCHA_ENFORCED:
+            self.verify_captcha(db, captcha_id, captcha_text)
         self._validate_phone(phone)
         now = utcnow()
         latest = db.query(SmsCode).filter(SmsCode.phone == phone).order_by(SmsCode.created_at.desc()).first()

@@ -764,7 +764,8 @@ def test_auth_service_create_token_pair(monkeypatch):
 
     monkeypatch.setattr("app.services.auth_service.settings", SimpleNamespace(
         SMS_MOCK_ENABLED=True, SMS_MOCK_CODE="123456", JWT_SECRET_KEY="test-key-123",
-        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7
+        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7,
+        CAPTCHA_ENFORCED=False
     ))
 
     user = SimpleNamespace(id=1, phone="13800138000", role="user")
@@ -795,7 +796,8 @@ def test_auth_service_send_code(monkeypatch):
 
     monkeypatch.setattr("app.services.auth_service.settings", SimpleNamespace(
         SMS_MOCK_ENABLED=True, SMS_MOCK_CODE="123456", JWT_SECRET_KEY="test-key-123",
-        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7
+        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7,
+        CAPTCHA_ENFORCED=False
     ))
 
     service = AuthService()
@@ -812,7 +814,8 @@ def test_auth_service_login(monkeypatch):
 
     monkeypatch.setattr("app.services.auth_service.settings", SimpleNamespace(
         SMS_MOCK_ENABLED=True, SMS_MOCK_CODE="123456", JWT_SECRET_KEY="test-key-123",
-        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7
+        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7,
+        CAPTCHA_ENFORCED=False
     ))
 
     service = AuthService()
@@ -833,7 +836,8 @@ def test_auth_service_register(monkeypatch):
 
     monkeypatch.setattr("app.services.auth_service.settings", SimpleNamespace(
         SMS_MOCK_ENABLED=True, SMS_MOCK_CODE="123456", JWT_SECRET_KEY="test-key-123",
-        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7
+        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7,
+        CAPTCHA_ENFORCED=False
     ))
 
     service = AuthService()
@@ -849,7 +853,8 @@ def test_auth_service_refresh(monkeypatch):
 
     monkeypatch.setattr("app.services.auth_service.settings", SimpleNamespace(
         SMS_MOCK_ENABLED=True, SMS_MOCK_CODE="123456", JWT_SECRET_KEY="test-key-123",
-        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7
+        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7,
+        CAPTCHA_ENFORCED=False
     ))
 
     service = AuthService()
@@ -863,7 +868,8 @@ def test_auth_service_logout(monkeypatch):
 
     monkeypatch.setattr("app.services.auth_service.settings", SimpleNamespace(
         SMS_MOCK_ENABLED=True, SMS_MOCK_CODE="123456", JWT_SECRET_KEY="test-key-123",
-        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7
+        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7,
+        CAPTCHA_ENFORCED=False
     ))
 
     service = AuthService()

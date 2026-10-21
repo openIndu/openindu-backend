@@ -21,6 +21,7 @@ from app.models import Base
 
 # Import ALL model modules so they register with Base.metadata
 import app.models.admin_audit_log  # noqa
+import app.models.captcha_challenge  # noqa
 import app.models.chat_log  # noqa
 import app.models.document  # noqa
 import app.models.download_log  # noqa
