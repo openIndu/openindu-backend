@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     SMS_ACCESS_KEY_SECRET: str = ""
     SMS_SIGN_NAME: str = ""
     SMS_TEMPLATE_ID: str = ""
+    # Notification template for member-application approval (distinct Aliyun
+    # template from the verification-code one). Empty = approvals succeed
+    # without an SMS notice.
+    SMS_APPROVAL_TEMPLATE_ID: str = ""
     SMS_MOCK_ENABLED: bool = True
     SMS_MOCK_CODE: str = "888888"
 
