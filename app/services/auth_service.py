@@ -11,8 +11,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.captcha_challenge import CaptchaChallenge
 from app.models.login_session import LoginSession
+from app.models.slider_challenge import SliderChallenge
 from app.models.sms_code import SmsCode
 from app.models.token_blacklist import TokenBlacklist
 from app.models.user import User
@@ -20,8 +20,17 @@ from app.services.sms_service import sms_service
 
 logger = logging.getLogger(__name__)
 PHONE_RE = re.compile(r"^1\d{10}$")
-# No 0/O, 1/I/L look-alikes so a rendered captcha is unambiguous to humans.
-CAPTCHA_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+# Slider-puzzle geometry. The piece body is PIECE px wide; the knob sticks out
+# KNOB px above/beside it, so the sprite canvas is (PIECE+KNOB)².
+SLIDER_WIDTH = 320
+SLIDER_HEIGHT = 160
+SLIDER_PIECE = 44
+SLIDER_KNOB = 10
+SLIDER_TOLERANCE = 5
+# The notch never sits in the leftmost strip (where the piece starts) and the
+# sprite must stay fully inside the background.
+SLIDER_X_RANGE = (SLIDER_WIDTH // 2, SLIDER_WIDTH - SLIDER_PIECE - 6)
+SLIDER_Y_RANGE = (2, SLIDER_HEIGHT - SLIDER_PIECE - 2 * SLIDER_KNOB - 2)
 
 
 def utcnow() -> datetime:
@@ -81,56 +90,154 @@ class AuthService:
             "refresh_expires_at": refresh_expires_at,
         }
 
-    def get_captcha(self, db: Session, ip: str | None = None) -> dict:
-        """Create an image captcha challenge; returns captcha_id + PNG data URI."""
+    def issue_slider_challenge(self, db: Session, ip: str | None = None) -> dict:
+        """Create a slider-puzzle challenge; returns background + piece as PNG data URIs."""
         now = utcnow()
         # Opportunistic cleanup keeps the table small without a scheduler job.
-        db.query(CaptchaChallenge).filter(CaptchaChallenge.expires_at < now).delete()
-        answer = "".join(random.choices(CAPTCHA_ALPHABET, k=4))
-        challenge = CaptchaChallenge(answer=answer, expires_at=now + timedelta(minutes=5), ip_address=ip)
+        db.query(SliderChallenge).filter(SliderChallenge.expires_at < now).delete()
+        x = random.randint(*SLIDER_X_RANGE)
+        y = random.randint(*SLIDER_Y_RANGE)
+        challenge = SliderChallenge(
+            x=x,
+            y=y,
+            tolerance=SLIDER_TOLERANCE,
+            expires_at=now + timedelta(minutes=2),
+            ip_address=ip,
+        )
         db.add(challenge)
         db.commit()
         db.refresh(challenge)
-        return {"captcha_id": challenge.id, "image": self._render_captcha(answer), "expires_in": 300}
+        background, piece = self._render_slider_challenge(x, y)
+        return {
+            "challenge_id": challenge.id,
+            "background": background,
+            "piece": piece,
+            "piece_y": y,
+            "expires_in": 120,
+        }
 
     @staticmethod
-    def _render_captcha(answer: str) -> str:
-        """Render the challenge text as a PNG data URI. Lazy import mirrors
-        _send_sms so the unit-test import path stays dependency-light."""
+    def _render_slider_challenge(x: int, y: int) -> tuple[str, str]:
+        """Render the puzzle background (with the notch cut out) and the piece
+        sprite as PNG data URIs. Lazy import mirrors _send_sms so the unit-test
+        import path stays dependency-light."""
         import base64
         import io
 
-        from captcha.image import ImageCaptcha
+        from PIL import Image, ImageDraw, ImageFilter
 
-        buffer = io.BytesIO()
-        ImageCaptcha(width=160, height=60).write(answer, buffer)
-        return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+        piece_w = SLIDER_PIECE + SLIDER_KNOB
+        # Puzzle-piece silhouette: square body with an outward knob on top and
+        # an inward notch on the right, carved on an L-mode mask (white = opaque).
+        mask = Image.new("L", (piece_w, piece_w), 0)
+        draw = ImageDraw.Draw(mask)
+        draw.rounded_rectangle((0, SLIDER_KNOB, SLIDER_PIECE, SLIDER_KNOB + SLIDER_PIECE), radius=6, fill=255)
+        draw.pieslice(
+            (SLIDER_PIECE // 2 - SLIDER_KNOB, 0, SLIDER_PIECE // 2 + SLIDER_KNOB, 2 * SLIDER_KNOB),
+            180,
+            360,
+            fill=255,
+        )
+        draw.pieslice(
+            (SLIDER_PIECE - SLIDER_KNOB, SLIDER_KNOB + SLIDER_PIECE // 2 - SLIDER_KNOB,
+             SLIDER_PIECE + SLIDER_KNOB, SLIDER_KNOB + SLIDER_PIECE // 2 + SLIDER_KNOB),
+            0,
+            360,
+            fill=0,
+        )
 
-    def verify_captcha(self, db: Session, captcha_id: int | None, text: str | None) -> None:
-        """Consume and check a captcha challenge; raises 400 on any mismatch.
+        # Procedural background: vertical gradient plus translucent shapes, so
+        # no image assets ship with the app and every challenge looks different.
+        background = Image.new("RGB", (SLIDER_WIDTH, SLIDER_HEIGHT))
+        top = (random.randint(40, 120), random.randint(80, 160), random.randint(140, 220))
+        bottom = (random.randint(120, 220), random.randint(40, 110), random.randint(60, 160))
+        bg_draw = ImageDraw.Draw(background)
+        for row in range(SLIDER_HEIGHT):
+            ratio = row / SLIDER_HEIGHT
+            color = tuple(int(t + (b - t) * ratio) for t, b in zip(top, bottom))
+            bg_draw.line((0, row, SLIDER_WIDTH, row), fill=color)
+        shape_draw = ImageDraw.Draw(background, "RGBA")
+        for _ in range(7):
+            cx, cy = random.randint(0, SLIDER_WIDTH), random.randint(0, SLIDER_HEIGHT)
+            radius = random.randint(8, 30)
+            shade = (255, 255, 255, 26) if random.random() < 0.5 else (0, 0, 0, 22)
+            shape_draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=shade)
+        background = background.filter(ImageFilter.GaussianBlur(1))
+
+        # Cut the notch out of the background: darken it and mark the edge in
+        # white so the drop target is clearly visible.
+        edge = mask.filter(ImageFilter.MaxFilter(5))
+        overlay = Image.new("RGBA", background.size, (0, 0, 0, 0))
+        hole = Image.new("RGBA", (piece_w, piece_w), (15, 18, 24, 150))
+        overlay.paste(hole, (x, y), mask)
+        ring = Image.new("RGBA", (piece_w, piece_w), (255, 255, 255, 170))
+        edge_only = edge.point(lambda v: 255 if v > 0 else 0)
+        ring_mask = Image.new("L", (piece_w, piece_w), 0)
+        ring_mask.paste(edge_only, (0, 0))
+        ring_mask.paste(mask, (0, 0))
+        overlay.paste(ring, (x, y), ring_mask)
+        background = Image.alpha_composite(background.convert("RGBA"), overlay)
+
+        # The piece sprite is the exact pixels the notch removed.
+        sprite = background.crop((x, y, x + piece_w, y + piece_w))
+        sprite.putalpha(mask)
+
+        def to_uri(image: Image.Image) -> str:
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+
+        return to_uri(background.convert("RGB")), to_uri(sprite)
+
+    def verify_slider_challenge(self, db: Session, challenge_id: int, drag_x: int) -> dict:
+        """Check the submitted drag distance and hand out a one-time ticket.
 
         The challenge is single-use regardless of outcome — consumed even on a
-        wrong guess — so a captured id cannot be replayed or brute-forced.
+        miss — so a captured id cannot be retried or brute-forced beyond its
+        two-minute lifetime and the rate limit.
         """
-        record = None
-        if captcha_id is not None:
-            record = db.query(CaptchaChallenge).filter(CaptchaChallenge.id == captcha_id).first()
+        record = db.query(SliderChallenge).filter(SliderChallenge.id == challenge_id).first()
         valid = (
             record is not None
             and not record.is_used
             and record.expires_at > utcnow()
-            and bool(text)
-            and record.answer == text.strip().upper()
+            and abs(drag_x - record.x) <= record.tolerance
         )
+        now = utcnow()
         if record is not None:
+            if valid:
+                record.verified = True
+                record.ticket = uuid.uuid4().hex
+                record.ticket_expires_at = now + timedelta(minutes=5)
+            # Either way the challenge is spent; a verified row keeps its ticket
+            # for /auth/send-code to consume.
             record.is_used = True
             db.commit()
         if not valid:
-            raise HTTPException(status_code=400, detail="图形验证码错误或已过期，请刷新后重试")
+            raise HTTPException(status_code=400, detail="滑块验证未通过，请重试")
+        return {"ticket": record.ticket, "expires_in": 300}
 
-    def send_code(self, db: Session, phone: str, captcha_id: int | None = None, captcha_text: str | None = None) -> None:
-        if settings.CAPTCHA_ENFORCED:
-            self.verify_captcha(db, captcha_id, captcha_text)
+    def consume_slider_ticket(self, db: Session, ticket: str | None) -> None:
+        """Consume a verified slider ticket; raises 400 when it is missing,
+        stale or already spent."""
+        record = None
+        if ticket:
+            record = (
+                db.query(SliderChallenge)
+                .filter(
+                    SliderChallenge.ticket == ticket,
+                    SliderChallenge.verified.is_(True),
+                    SliderChallenge.ticket_expires_at > utcnow(),
+                )
+                .first()
+            )
+        if record is not None:
+            record.ticket = None
+            db.commit()
+        if record is None:
+            raise HTTPException(status_code=400, detail="请先完成滑块验证")
+
+    def send_code(self, db: Session, phone: str, slider_ticket: str | None = None) -> None:
         self._validate_phone(phone)
         now = utcnow()
         latest = db.query(SmsCode).filter(SmsCode.phone == phone).order_by(SmsCode.created_at.desc()).first()
@@ -140,6 +247,10 @@ class AuthService:
         today_count = db.query(SmsCode).filter(SmsCode.phone == phone, SmsCode.created_at >= today_start).count()
         if today_count >= 10:
             raise HTTPException(status_code=429, detail="今日验证码发送次数已达上限")
+        # The slider gate runs after the rate limits so a 429 does not burn the
+        # user's already-verified ticket.
+        if settings.CAPTCHA_ENFORCED:
+            self.consume_slider_ticket(db, slider_ticket)
         code = settings.SMS_MOCK_CODE if settings.SMS_MOCK_ENABLED else f"{random.randint(0, 999999):06d}"
         db.add(SmsCode(phone=phone, code=code, expires_at=now + timedelta(minutes=5), last_sent_at=now))
         db.commit()

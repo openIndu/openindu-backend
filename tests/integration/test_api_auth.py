@@ -231,25 +231,26 @@ class TestRegisterAndLogin:
             assert response.json()["code"] == 200
 
 
-class TestCaptcha:
-    """GET /auth/captcha + the captcha gate on POST /auth/send-code.
+class TestSliderCaptcha:
+    """GET /auth/slider-captcha, POST /auth/slider-captcha/verify and the
+    slider gate on POST /auth/send-code.
 
     Unlike the classes above, these run against the real SQLite database
-    (conftest creates every table) because the captcha challenge has to
-    survive between the two HTTP calls.
+    (conftest creates every table) because the challenge and its ticket have
+    to survive between HTTP calls.
     """
 
     @pytest.fixture(autouse=True)
     def setup(self):
         from app.core.database import SessionLocal
-        from app.models.captcha_challenge import CaptchaChallenge
+        from app.models.slider_challenge import SliderChallenge
 
         from app.web_app import app
         from app.core.dependencies import get_db
         from fastapi.testclient import TestClient
 
         db = SessionLocal()
-        db.query(CaptchaChallenge).delete()
+        db.query(SliderChallenge).delete()
         db.commit()
 
         def _real_db():
@@ -265,47 +266,63 @@ class TestCaptcha:
         self.db = db
         yield
         app.dependency_overrides.clear()
-        db.query(CaptchaChallenge).delete()
+        db.query(SliderChallenge).delete()
         db.commit()
         db.close()
 
-    def test_get_captcha_returns_image(self):
-        """GET /auth/captcha returns a challenge id and a PNG data URI."""
-        response = self.client.get("/api/v1/auth/captcha")
+    def _issue(self):
+        from app.models.slider_challenge import SliderChallenge
+
+        data = self.client.get("/api/v1/auth/slider-captcha").json()["data"]
+        row = self.db.query(SliderChallenge).filter(
+            SliderChallenge.id == data["challenge_id"]).one()
+        return data, row
+
+    def test_get_slider_captcha_returns_puzzle(self):
+        """GET /auth/slider-captcha returns an id, both PNG data URIs and piece_y."""
+        response = self.client.get("/api/v1/auth/slider-captcha")
         assert response.status_code == 200
         data = response.json()["data"]
-        assert data["captcha_id"] > 0
-        assert data["image"].startswith("data:image/png;base64,")
+        assert data["challenge_id"] > 0
+        assert data["background"].startswith("data:image/png;base64,")
+        assert data["piece"].startswith("data:image/png;base64,")
+        assert 0 <= data["piece_y"] < 160
 
-    def test_send_code_without_captcha_rejected(self):
-        """POST /auth/send-code without captcha fields fails with 400."""
+    def test_slider_verify_passes_and_returns_ticket(self):
+        """The true offset (read from the DB) passes and yields a ticket."""
+        data, row = self._issue()
+        response = self.client.post("/api/v1/auth/slider-captcha/verify", json={
+            "challenge_id": data["challenge_id"], "x": row.x})
+        assert response.status_code == 200
+        assert response.json()["data"]["ticket"]
+
+    def test_slider_verify_wrong_offset_rejected(self):
+        data, row = self._issue()
+        response = self.client.post("/api/v1/auth/slider-captcha/verify", json={
+            "challenge_id": data["challenge_id"], "x": row.x + 6})
+        assert response.status_code == 400
+        assert "滑块验证未通过" in response.json()["detail"]
+
+    def test_send_code_without_ticket_rejected(self):
+        """POST /auth/send-code without a slider ticket fails with 400."""
         response = self.client.post("/api/v1/auth/send-code", json={"phone": "13800138000"})
         assert response.status_code == 400
-        assert "图形验证码" in response.json()["detail"]
+        assert "请先完成滑块验证" in response.json()["detail"]
 
-    def test_send_code_with_wrong_captcha_rejected(self):
-        """A wrong captcha answer fails before any SMS-side validation."""
-        captcha = self.client.get("/api/v1/auth/captcha").json()["data"]
+    def test_send_code_with_bogus_ticket_rejected(self):
         response = self.client.post("/api/v1/auth/send-code", json={
-            "phone": "13800138000",
-            "captcha_id": captcha["captcha_id"],
-            "captcha_text": "ZZZZ",
-        })
+            "phone": "13800138000", "slider_ticket": "not-a-ticket"})
         assert response.status_code == 400
-        assert "图形验证码" in response.json()["detail"]
+        assert "请先完成滑块验证" in response.json()["detail"]
 
-    def test_send_code_with_valid_captcha_passes_gate(self):
-        """A correct captcha lets the request through to phone validation —
-        proven by failing on an invalid phone instead of the captcha error."""
-        from app.models.captcha_challenge import CaptchaChallenge
-
-        captcha = self.client.get("/api/v1/auth/captcha").json()["data"]
-        row = self.db.query(CaptchaChallenge).filter(
-            CaptchaChallenge.id == captcha["captcha_id"]).one()
+    def test_send_code_with_verified_ticket_passes_gate(self):
+        """A passed slider lets the request through to phone validation —
+        proven by failing on an invalid phone instead of the slider error."""
+        data, row = self._issue()
+        verify = self.client.post("/api/v1/auth/slider-captcha/verify", json={
+            "challenge_id": data["challenge_id"], "x": row.x})
+        ticket = verify.json()["data"]["ticket"]
         response = self.client.post("/api/v1/auth/send-code", json={
-            "phone": "123",
-            "captcha_id": captcha["captcha_id"],
-            "captcha_text": row.answer,
-        })
+            "phone": "123", "slider_ticket": ticket})
         assert response.status_code == 400
         assert "手机号格式" in response.json()["detail"]

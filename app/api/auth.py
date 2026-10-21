@@ -18,8 +18,8 @@ security = HTTPBearer()
 
 class PhoneRequest(BaseModel):
     phone: str
-    captcha_id: int | None = None
-    captcha_text: str | None = None
+    # One-time ticket from a passed slider-puzzle verification.
+    slider_ticket: str | None = None
 
 
 class AuthRequest(BaseModel):
@@ -40,17 +40,29 @@ class PhoneChangeRequest(BaseModel):
     code: str
 
 
-@router.get("/captcha")
+class SliderVerifyRequest(BaseModel):
+    challenge_id: int
+    x: int
+
+
+@router.get("/slider-captcha")
 @limiter.limit("30/minute")
-async def captcha(request: Request, db: Session = Depends(get_db)):
-    """Fresh image captcha challenge for gating /auth/send-code."""
-    return ok(auth_service.get_captcha(db, real_client_ip(request)))
+async def slider_captcha(request: Request, db: Session = Depends(get_db)):
+    """Fresh slider-puzzle challenge for gating /auth/send-code."""
+    return ok(auth_service.issue_slider_challenge(db, real_client_ip(request)))
+
+
+@router.post("/slider-captcha/verify")
+@limiter.limit("30/minute")
+async def slider_verify(request: Request, body: SliderVerifyRequest, db: Session = Depends(get_db)):
+    """Check the drag position; on success returns a one-time send-code ticket."""
+    return ok(auth_service.verify_slider_challenge(db, body.challenge_id, body.x))
 
 
 @router.post("/send-code")
 @limiter.limit("5/minute")
 async def send_code(request: Request, body: PhoneRequest, db: Session = Depends(get_db)):
-    auth_service.send_code(db, body.phone, body.captcha_id, body.captcha_text)
+    auth_service.send_code(db, body.phone, body.slider_ticket)
     return ok(message="验证码已发送")
 
 

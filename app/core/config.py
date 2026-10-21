@@ -50,7 +50,8 @@ class Settings(BaseSettings):
     SMS_MOCK_CODE: str = "888888"
 
     # Anti-bot gate: when true, /auth/send-code must carry a valid image
-    # captcha (GET /auth/captcha). Escape hatch for prod incidents only.
+    # Require a slider-puzzle captcha (GET /auth/slider-captcha) before
+    # /auth/send-code sends an SMS. Escape hatch for prod incidents only.
     CAPTCHA_ENFORCED: bool = True
 
     MCP_API_KEY: str = "change-me-mcp-key"

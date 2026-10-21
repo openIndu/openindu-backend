@@ -7,11 +7,10 @@ from fastapi import HTTPException
 from jose import jwt
 
 from app.core.config import settings
-from app.models.captcha_challenge import CaptchaChallenge
 from app.models.sms_code import SmsCode
 from app.models.token_blacklist import TokenBlacklist
 from app.models.user import User
-from app.services.auth_service import CAPTCHA_ALPHABET, AuthService, auth_service, utcnow
+from app.services.auth_service import AuthService, auth_service, utcnow
 
 
 def make_user(id=1, phone="13800138000", role="user", active=True, blacklisted=False):
@@ -338,89 +337,111 @@ class TestLogout:
         mock_db.commit.assert_called_once()
 
 
-class TestCaptcha:
-    """Image captcha generation/verification and the send-code gate."""
+class TestSliderCaptcha:
+    """Slider-puzzle challenge issuance, verification, ticket consumption
+    and the send-code gate."""
 
     @pytest.fixture()
     def db_session(self):
-        """Real SQLite session (tables created by conftest) with captcha rows cleared."""
+        """Real SQLite session (tables created by conftest) with slider rows cleared."""
         from app.core.database import SessionLocal
-        from app.models.captcha_challenge import CaptchaChallenge
+        from app.models.slider_challenge import SliderChallenge
 
         session = SessionLocal()
-        session.query(CaptchaChallenge).delete()
+        session.query(SliderChallenge).delete()
         session.commit()
         yield session
-        session.query(CaptchaChallenge).delete()
+        session.query(SliderChallenge).delete()
         session.commit()
         session.close()
 
-    def test_get_captcha_creates_challenge(self, db_session):
-        """get_captcha returns an id + PNG data URI backed by a DB row."""
-        result = auth_service.get_captcha(db_session, ip="1.2.3.4")
+    def test_issue_slider_challenge_creates_challenge(self, db_session):
+        """issue_slider_challenge returns images + geometry backed by a DB row."""
+        from app.models.slider_challenge import SliderChallenge
 
-        assert result["captcha_id"] > 0
-        assert result["image"].startswith("data:image/png;base64,")
-        assert result["expires_in"] == 300
-        row = db_session.query(CaptchaChallenge).filter(CaptchaChallenge.id == result["captcha_id"]).one()
-        assert len(row.answer) == 4
-        assert all(ch in CAPTCHA_ALPHABET for ch in row.answer)
+        result = auth_service.issue_slider_challenge(db_session, ip="1.2.3.4")
+
+        assert result["challenge_id"] > 0
+        assert result["background"].startswith("data:image/png;base64,")
+        assert result["piece"].startswith("data:image/png;base64,")
+        assert result["expires_in"] == 120
+        row = db_session.query(SliderChallenge).filter(SliderChallenge.id == result["challenge_id"]).one()
         assert row.ip_address == "1.2.3.4"
         assert row.is_used is False
+        assert row.verified is False
+        assert 0 < row.x < 320
+        assert 0 <= row.y < 160
 
-    def test_verify_captcha_accepts_and_consumes(self, db_session):
-        """A correct answer passes once, then the challenge is spent."""
-        result = auth_service.get_captcha(db_session)
-        row = db_session.query(CaptchaChallenge).filter(
-            CaptchaChallenge.id == result["captcha_id"]).one()
+    def test_verify_slider_accepts_exact_and_within_tolerance(self, db_session):
+        """Exact hit and ±tolerance both pass once, then the challenge is spent."""
+        from app.models.slider_challenge import SliderChallenge
 
-        auth_service.verify_captcha(db_session, result["captcha_id"], row.answer.lower())
-        with pytest.raises(HTTPException, match="图形验证码错误"):
-            auth_service.verify_captcha(db_session, result["captcha_id"], row.answer)
+        result = auth_service.issue_slider_challenge(db_session)
+        row = db_session.query(SliderChallenge).filter(
+            SliderChallenge.id == result["challenge_id"]).one()
 
-    def test_verify_captcha_rejects_wrong_text(self, db_session):
-        """A wrong answer fails and still consumes the challenge."""
-        result = auth_service.get_captcha(db_session)
+        ticket = auth_service.verify_slider_challenge(db_session, result["challenge_id"], row.x)
+        assert ticket["ticket"]
+        assert ticket["expires_in"] == 300
+        with pytest.raises(HTTPException, match="滑块验证未通过"):
+            auth_service.verify_slider_challenge(db_session, result["challenge_id"], row.x)
 
-        with pytest.raises(HTTPException, match="图形验证码错误"):
-            auth_service.verify_captcha(db_session, result["captcha_id"], "ZZZZ")
-        row = db_session.query(CaptchaChallenge).filter(
-            CaptchaChallenge.id == result["captcha_id"]).one()
+    def test_verify_slider_rejects_out_of_tolerance(self, db_session):
+        """A drag distance beyond ±5px fails and consumes the challenge."""
+        from app.models.slider_challenge import SliderChallenge
+
+        result = auth_service.issue_slider_challenge(db_session)
+        row = db_session.query(SliderChallenge).filter(
+            SliderChallenge.id == result["challenge_id"]).one()
+
+        with pytest.raises(HTTPException, match="滑块验证未通过"):
+            auth_service.verify_slider_challenge(db_session, result["challenge_id"], row.x + 6)
+        db_session.refresh(row)
         assert row.is_used is True
+        assert row.verified is False
 
-    def test_verify_captcha_rejects_missing_id(self, db_session):
-        with pytest.raises(HTTPException, match="图形验证码错误"):
-            auth_service.verify_captcha(db_session, None, "ABCD")
+    def test_verify_slider_rejects_missing_challenge(self, db_session):
+        with pytest.raises(HTTPException, match="滑块验证未通过"):
+            auth_service.verify_slider_challenge(db_session, 999999, 100)
 
-    def test_verify_captcha_rejects_expired(self, db_session):
-        from app.models.captcha_challenge import CaptchaChallenge
+    def test_verify_slider_rejects_expired(self, db_session):
+        from app.models.slider_challenge import SliderChallenge
 
-        challenge = CaptchaChallenge(answer="ABCD", expires_at=utcnow() - timedelta(minutes=1))
+        challenge = SliderChallenge(x=200, y=50, expires_at=utcnow() - timedelta(minutes=1))
         db_session.add(challenge)
         db_session.commit()
         db_session.refresh(challenge)
 
-        with pytest.raises(HTTPException, match="图形验证码错误"):
-            auth_service.verify_captcha(db_session, challenge.id, "ABCD")
+        with pytest.raises(HTTPException, match="滑块验证未通过"):
+            auth_service.verify_slider_challenge(db_session, challenge.id, 200)
 
-    def test_send_code_requires_captcha_when_enforced(self, db_session, monkeypatch):
-        """With CAPTCHA_ENFORCED, send_code without a captcha fails before
-        touching the SMS tables; a valid captcha lets it through."""
-        from app.models.captcha_challenge import CaptchaChallenge
+    def test_ticket_single_use_for_send_code(self, db_session):
+        """The ticket gates exactly one send_code; the second use fails."""
+        from app.models.slider_challenge import SliderChallenge
+        from app.models.sms_code import SmsCode
+
+        result = auth_service.issue_slider_challenge(db_session)
+        row = db_session.query(SliderChallenge).filter(
+            SliderChallenge.id == result["challenge_id"]).one()
+        ticket = auth_service.verify_slider_challenge(db_session, result["challenge_id"], row.x)["ticket"]
+
+        auth_service.send_code(db_session, "13800138000", ticket)
+        assert db_session.query(SmsCode).filter(SmsCode.phone == "13800138000").count() == 1
+        with pytest.raises(HTTPException, match="请先完成滑块验证"):
+            auth_service.send_code(db_session, "13800138001", ticket)
+
+    def test_send_code_requires_slider_ticket_when_enforced(self, db_session, monkeypatch):
+        """With CAPTCHA_ENFORCED, send_code without a ticket fails before
+        touching the SMS tables."""
         from app.models.sms_code import SmsCode
 
         monkeypatch.setattr(settings, "CAPTCHA_ENFORCED", True)
         db_session.query(SmsCode).delete()
         db_session.commit()
 
-        with pytest.raises(HTTPException, match="图形验证码错误"):
+        with pytest.raises(HTTPException, match="请先完成滑块验证"):
             auth_service.send_code(db_session, "13800138000")
-
-        result = auth_service.get_captcha(db_session)
-        row = db_session.query(CaptchaChallenge).filter(
-            CaptchaChallenge.id == result["captcha_id"]).one()
-        auth_service.send_code(db_session, "13800138000", result["captcha_id"], row.answer)
-        assert db_session.query(SmsCode).filter(SmsCode.phone == "13800138000").count() == 1
+        assert db_session.query(SmsCode).filter(SmsCode.phone == "13800138000").count() == 0
 
     def test_send_code_skips_captcha_when_disabled(self, db_session, monkeypatch):
         """CAPTCHA_ENFORCED=false bypasses the gate (prod escape hatch)."""
