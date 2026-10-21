@@ -1,13 +1,13 @@
 """SMS verification code model."""
-from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, String, func
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, func
 
-from app.models import Base
+from app.models import Base, BigIntPK
 
 
 class SmsCode(Base):
     __tablename__ = "sms_codes"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigIntPK, primary_key=True, autoincrement=True)
     phone = Column(String(20), nullable=False, index=True)
     code = Column(String(6), nullable=False)
     expires_at = Column(DateTime, nullable=False)
