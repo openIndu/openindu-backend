@@ -15,6 +15,7 @@ from app.models.login_session import LoginSession
 from app.models.sms_code import SmsCode
 from app.models.token_blacklist import TokenBlacklist
 from app.models.user import User
+from app.services.sms_service import sms_service
 
 logger = logging.getLogger(__name__)
 PHONE_RE = re.compile(r"^1\d{10}$")
@@ -96,24 +97,7 @@ class AuthService:
     @staticmethod
     def _send_sms(phone: str, code: str) -> None:
         try:
-            from alibabacloud_dysmsapi20170525.client import Client
-            from alibabacloud_dysmsapi20170525.models import SendSmsRequest
-            from alibabacloud_tea_openapi.models import Config
-            cfg = Config(
-                access_key_id=settings.SMS_ACCESS_KEY,
-                access_key_secret=settings.SMS_ACCESS_KEY_SECRET,
-                endpoint="dysmsapi.aliyuncs.com",
-            )
-            client = Client(cfg)
-            req = SendSmsRequest(
-                phone_numbers=phone,
-                sign_name=settings.SMS_SIGN_NAME,
-                template_code=settings.SMS_TEMPLATE_ID,
-                template_param=f'{{"code":"{code}"}}',
-            )
-            resp = client.send_sms(req)
-            if resp.body.code != "OK":
-                raise RuntimeError(f"阿里云短信发送失败: {resp.body.message}")
+            sms_service.send_verification_code(phone, code)
         except Exception as exc:
             logger.error("SMS send failed to %s: %s", phone, exc)
             raise HTTPException(status_code=502, detail=f"短信发送失败: {exc}")

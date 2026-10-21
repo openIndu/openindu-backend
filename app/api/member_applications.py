@@ -1,4 +1,5 @@
 """Member application API — user applies, admin approves."""
+import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,6 +10,9 @@ from app.core.dependencies import get_db, require_admin, require_auth
 from app.core.utils import iso_utc, mask_phone, ok
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.user import User
+from app.services.sms_service import sms_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -146,6 +150,15 @@ async def approve(user_id: int, db: Session = Depends(get_db), admin: User = Dep
     _audit(db, admin.id, target.id, "member_approve", {"user_id": user_id})
     db.commit()
     db.refresh(target)
+
+    # Notify the applicant by SMS. The approval is already committed — a
+    # failed notice must never roll it back, only surface in the response.
+    sms_notified = False
+    try:
+        sms_notified = sms_service.send_member_approved(target.phone)
+    except Exception as exc:
+        logger.error("Member-approved SMS failed for user %s (%s): %s", target.id, target.phone, exc)
+
     return ok({
         "id": target.id,
         "user_id": target.id,
@@ -156,4 +169,5 @@ async def approve(user_id: int, db: Session = Depends(get_db), admin: User = Dep
         "phone": mask_phone(target.phone),
         "nickname": target.nickname,
         "current_role": target.role,
-    }, "已通过，用户已升级为会员")
+        "sms_notified": sms_notified,
+    }, "已通过，用户已升级为会员" + ("，短信通知已发送" if sms_notified else "，短信通知未发出（详见服务日志）"))

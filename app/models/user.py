@@ -2,13 +2,13 @@
 from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, String, func
 
 from app.core.utils import iso_utc
-from app.models import Base
+from app.models import Base, BigIntPK
 
 
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigIntPK, primary_key=True, autoincrement=True)
     phone = Column(String(20), unique=True, nullable=False, index=True)
     nickname = Column(String(50), nullable=True)
     role = Column(String(20), nullable=False, default="user")
