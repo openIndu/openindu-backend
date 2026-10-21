@@ -7,7 +7,7 @@ from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db, require_auth
-from app.core.utils import ok
+from app.core.utils import ok, real_client_ip
 from app.models.user import User
 from app.services.auth_service import auth_service
 
@@ -18,6 +18,8 @@ security = HTTPBearer()
 
 class PhoneRequest(BaseModel):
     phone: str
+    captcha_id: int | None = None
+    captcha_text: str | None = None
 
 
 class AuthRequest(BaseModel):
@@ -38,10 +40,17 @@ class PhoneChangeRequest(BaseModel):
     code: str
 
 
+@router.get("/captcha")
+@limiter.limit("30/minute")
+async def captcha(request: Request, db: Session = Depends(get_db)):
+    """Fresh image captcha challenge for gating /auth/send-code."""
+    return ok(auth_service.get_captcha(db, real_client_ip(request)))
+
+
 @router.post("/send-code")
 @limiter.limit("5/minute")
 async def send_code(request: Request, body: PhoneRequest, db: Session = Depends(get_db)):
-    auth_service.send_code(db, body.phone)
+    auth_service.send_code(db, body.phone, body.captcha_id, body.captcha_text)
     return ok(message="验证码已发送")
 
 

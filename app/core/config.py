@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     SMS_MOCK_ENABLED: bool = True
     SMS_MOCK_CODE: str = "888888"
 
+    # Anti-bot gate: when true, /auth/send-code must carry a valid image
+    # captcha (GET /auth/captcha). Escape hatch for prod incidents only.
+    CAPTCHA_ENFORCED: bool = True
+
     MCP_API_KEY: str = "change-me-mcp-key"
     WEB_PORT: int = 8004
     MCP_PORT: int = 8005

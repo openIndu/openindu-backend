@@ -229,3 +229,83 @@ class TestRegisterAndLogin:
             response = client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {valid_token}"})
             assert response.status_code == 200
             assert response.json()["code"] == 200
+
+
+class TestCaptcha:
+    """GET /auth/captcha + the captcha gate on POST /auth/send-code.
+
+    Unlike the classes above, these run against the real SQLite database
+    (conftest creates every table) because the captcha challenge has to
+    survive between the two HTTP calls.
+    """
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        from app.core.database import SessionLocal
+        from app.models.captcha_challenge import CaptchaChallenge
+
+        from app.web_app import app
+        from app.core.dependencies import get_db
+        from fastapi.testclient import TestClient
+
+        db = SessionLocal()
+        db.query(CaptchaChallenge).delete()
+        db.commit()
+
+        def _real_db():
+            session = SessionLocal()
+            try:
+                yield session
+            finally:
+                session.close()
+
+        app.dependency_overrides.clear()
+        app.dependency_overrides[get_db] = _real_db
+        self.client = TestClient(app)
+        self.db = db
+        yield
+        app.dependency_overrides.clear()
+        db.query(CaptchaChallenge).delete()
+        db.commit()
+        db.close()
+
+    def test_get_captcha_returns_image(self):
+        """GET /auth/captcha returns a challenge id and a PNG data URI."""
+        response = self.client.get("/api/v1/auth/captcha")
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["captcha_id"] > 0
+        assert data["image"].startswith("data:image/png;base64,")
+
+    def test_send_code_without_captcha_rejected(self):
+        """POST /auth/send-code without captcha fields fails with 400."""
+        response = self.client.post("/api/v1/auth/send-code", json={"phone": "13800138000"})
+        assert response.status_code == 400
+        assert "图形验证码" in response.json()["detail"]
+
+    def test_send_code_with_wrong_captcha_rejected(self):
+        """A wrong captcha answer fails before any SMS-side validation."""
+        captcha = self.client.get("/api/v1/auth/captcha").json()["data"]
+        response = self.client.post("/api/v1/auth/send-code", json={
+            "phone": "13800138000",
+            "captcha_id": captcha["captcha_id"],
+            "captcha_text": "ZZZZ",
+        })
+        assert response.status_code == 400
+        assert "图形验证码" in response.json()["detail"]
+
+    def test_send_code_with_valid_captcha_passes_gate(self):
+        """A correct captcha lets the request through to phone validation —
+        proven by failing on an invalid phone instead of the captcha error."""
+        from app.models.captcha_challenge import CaptchaChallenge
+
+        captcha = self.client.get("/api/v1/auth/captcha").json()["data"]
+        row = self.db.query(CaptchaChallenge).filter(
+            CaptchaChallenge.id == captcha["captcha_id"]).one()
+        response = self.client.post("/api/v1/auth/send-code", json={
+            "phone": "123",
+            "captcha_id": captcha["captcha_id"],
+            "captcha_text": row.answer,
+        })
+        assert response.status_code == 400
+        assert "手机号格式" in response.json()["detail"]

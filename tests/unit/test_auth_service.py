@@ -7,10 +7,11 @@ from fastapi import HTTPException
 from jose import jwt
 
 from app.core.config import settings
+from app.models.captcha_challenge import CaptchaChallenge
 from app.models.sms_code import SmsCode
 from app.models.token_blacklist import TokenBlacklist
 from app.models.user import User
-from app.services.auth_service import AuthService, auth_service, utcnow
+from app.services.auth_service import CAPTCHA_ALPHABET, AuthService, auth_service, utcnow
 
 
 def make_user(id=1, phone="13800138000", role="user", active=True, blacklisted=False):
@@ -64,6 +65,13 @@ class TestPhoneValidation:
 
 class TestSendCode:
     """SMS code sending logic."""
+
+    @pytest.fixture(autouse=True)
+    def disable_captcha(self, monkeypatch):
+        """These tests exercise the SMS-side limits via a MagicMock db; the
+        captcha gate runs against the same mock and rejects it, so turn the
+        gate off here — TestCaptcha covers it against a real session."""
+        monkeypatch.setattr(settings, "CAPTCHA_ENFORCED", False)
 
     def test_send_code_success(self):
         """First send_code should succeed."""
@@ -328,3 +336,99 @@ class TestLogout:
         auth_service.logout(mock_db, tokens["access_token"])
         mock_db.add.assert_called_once()
         mock_db.commit.assert_called_once()
+
+
+class TestCaptcha:
+    """Image captcha generation/verification and the send-code gate."""
+
+    @pytest.fixture()
+    def db_session(self):
+        """Real SQLite session (tables created by conftest) with captcha rows cleared."""
+        from app.core.database import SessionLocal
+        from app.models.captcha_challenge import CaptchaChallenge
+
+        session = SessionLocal()
+        session.query(CaptchaChallenge).delete()
+        session.commit()
+        yield session
+        session.query(CaptchaChallenge).delete()
+        session.commit()
+        session.close()
+
+    def test_get_captcha_creates_challenge(self, db_session):
+        """get_captcha returns an id + PNG data URI backed by a DB row."""
+        result = auth_service.get_captcha(db_session, ip="1.2.3.4")
+
+        assert result["captcha_id"] > 0
+        assert result["image"].startswith("data:image/png;base64,")
+        assert result["expires_in"] == 300
+        row = db_session.query(CaptchaChallenge).filter(CaptchaChallenge.id == result["captcha_id"]).one()
+        assert len(row.answer) == 4
+        assert all(ch in CAPTCHA_ALPHABET for ch in row.answer)
+        assert row.ip_address == "1.2.3.4"
+        assert row.is_used is False
+
+    def test_verify_captcha_accepts_and_consumes(self, db_session):
+        """A correct answer passes once, then the challenge is spent."""
+        result = auth_service.get_captcha(db_session)
+        row = db_session.query(CaptchaChallenge).filter(
+            CaptchaChallenge.id == result["captcha_id"]).one()
+
+        auth_service.verify_captcha(db_session, result["captcha_id"], row.answer.lower())
+        with pytest.raises(HTTPException, match="图形验证码错误"):
+            auth_service.verify_captcha(db_session, result["captcha_id"], row.answer)
+
+    def test_verify_captcha_rejects_wrong_text(self, db_session):
+        """A wrong answer fails and still consumes the challenge."""
+        result = auth_service.get_captcha(db_session)
+
+        with pytest.raises(HTTPException, match="图形验证码错误"):
+            auth_service.verify_captcha(db_session, result["captcha_id"], "ZZZZ")
+        row = db_session.query(CaptchaChallenge).filter(
+            CaptchaChallenge.id == result["captcha_id"]).one()
+        assert row.is_used is True
+
+    def test_verify_captcha_rejects_missing_id(self, db_session):
+        with pytest.raises(HTTPException, match="图形验证码错误"):
+            auth_service.verify_captcha(db_session, None, "ABCD")
+
+    def test_verify_captcha_rejects_expired(self, db_session):
+        from app.models.captcha_challenge import CaptchaChallenge
+
+        challenge = CaptchaChallenge(answer="ABCD", expires_at=utcnow() - timedelta(minutes=1))
+        db_session.add(challenge)
+        db_session.commit()
+        db_session.refresh(challenge)
+
+        with pytest.raises(HTTPException, match="图形验证码错误"):
+            auth_service.verify_captcha(db_session, challenge.id, "ABCD")
+
+    def test_send_code_requires_captcha_when_enforced(self, db_session, monkeypatch):
+        """With CAPTCHA_ENFORCED, send_code without a captcha fails before
+        touching the SMS tables; a valid captcha lets it through."""
+        from app.models.captcha_challenge import CaptchaChallenge
+        from app.models.sms_code import SmsCode
+
+        monkeypatch.setattr(settings, "CAPTCHA_ENFORCED", True)
+        db_session.query(SmsCode).delete()
+        db_session.commit()
+
+        with pytest.raises(HTTPException, match="图形验证码错误"):
+            auth_service.send_code(db_session, "13800138000")
+
+        result = auth_service.get_captcha(db_session)
+        row = db_session.query(CaptchaChallenge).filter(
+            CaptchaChallenge.id == result["captcha_id"]).one()
+        auth_service.send_code(db_session, "13800138000", result["captcha_id"], row.answer)
+        assert db_session.query(SmsCode).filter(SmsCode.phone == "13800138000").count() == 1
+
+    def test_send_code_skips_captcha_when_disabled(self, db_session, monkeypatch):
+        """CAPTCHA_ENFORCED=false bypasses the gate (prod escape hatch)."""
+        from app.models.sms_code import SmsCode
+
+        monkeypatch.setattr(settings, "CAPTCHA_ENFORCED", False)
+        db_session.query(SmsCode).delete()
+        db_session.commit()
+
+        auth_service.send_code(db_session, "13800138000")
+        assert db_session.query(SmsCode).filter(SmsCode.phone == "13800138000").count() == 1
