@@ -9,7 +9,7 @@ pydantic-settings==2.5.2
 python-jose[cryptography]==3.4.0
 boto3==1.35.0
 botocore==1.35.0
-Pillow==11.2.1
+Pillow==13.0.0
 python-multipart==0.0.31
 apscheduler==3.11.2
 httpx==0.27.1
