@@ -7,12 +7,13 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from jose import jwt
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.utils import mask_phone
 from app.domain.auth import AuthError, BizCode
+from app.identity.application.authenticate import AuthenticateBySms, AuthenticationIntent
+from app.identity.infrastructure.accounts import SqlAccountRepository
 from app.models.login_session import LoginSession
 from app.models.slider_challenge import SliderChallenge
 from app.models.sms_code import SmsCode
@@ -321,65 +322,29 @@ class AuthService:
         return ok
 
     def register(self, db: Session, phone: str, code: str) -> dict:
-        if not self.verify_code(db, phone, code):
-            raise AuthError(BizCode.AUTH_INVALID_CODE)
-        existing = db.query(User).filter(User.phone == phone).first()
-        if existing:
-            # A soft-deleted row still occupies the unique phone slot; surface
-            # a distinct message so the admin can decide whether to restore or
-            # purge before the phone can be reused.
-            if existing.deleted_at is not None:
-                raise AuthError(BizCode.AUTH_PHONE_PREVIOUSLY_DELETED)
-            raise AuthError(BizCode.AUTH_USER_EXISTS)
-        role = "admin" if db.query(func.count(User.id)).scalar() == 0 else "user"
-        user = User(phone=phone, role=role, is_active=True, is_blacklisted=False, last_login=utcnow())
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        return {"user": user.to_dict(), "tokens": self.create_token_pair(user)}
+        result = self._authenticate(db, phone, code, AuthenticationIntent.REGISTER)
+        return self._auth_payload(result.account)
 
     def login(self, db: Session, phone: str, code: str) -> dict:
-        if not self.verify_code(db, phone, code):
-            raise AuthError(BizCode.AUTH_INVALID_CODE)
-        user = db.query(User).filter(User.phone == phone).first()
-        if not user:
-            raise AuthError(BizCode.AUTH_USER_NOT_FOUND)
-        if user.deleted_at is not None:
-            raise AuthError(BizCode.AUTH_ACCOUNT_REMOVED)
-        if not user.is_active or user.is_blacklisted:
-            raise AuthError(BizCode.AUTH_ACCOUNT_DISABLED)
-        user.last_login = utcnow()
-        db.commit()
-        db.refresh(user)
-        return {"user": user.to_dict(), "tokens": self.create_token_pair(user)}
+        result = self._authenticate(db, phone, code, AuthenticationIntent.LOGIN)
+        return self._auth_payload(result.account)
 
     def sign_in(self, db: Session, phone: str, code: str) -> tuple[dict, BizCode]:
         """Single-step auth: verify code, then login if user exists or
         auto-register on the spot. Returns the same envelope as login/register
         with an extra ``is_new_user`` fact and an explicit outcome code.
         """
-        if not self.verify_code(db, phone, code):
-            raise AuthError(BizCode.AUTH_INVALID_CODE)
-        user = db.query(User).filter(User.phone == phone).first()
-        is_new_user = False
-        outcome = BizCode.AUTH_LOGIN_SUCCESS
-        if user is None:
-            role = "admin" if db.query(func.count(User.id)).scalar() == 0 else "user"
-            user = User(phone=phone, role=role, is_active=True, is_blacklisted=False, last_login=utcnow())
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-            is_new_user = True
-            outcome = BizCode.AUTH_ACCOUNT_CREATED
-        else:
-            if user.deleted_at is not None:
-                raise AuthError(BizCode.AUTH_ACCOUNT_REMOVED)
-            if not user.is_active or user.is_blacklisted:
-                raise AuthError(BizCode.AUTH_ACCOUNT_DISABLED)
-            user.last_login = utcnow()
-            db.commit()
-            db.refresh(user)
-        return {"user": user.to_dict(), "tokens": self.create_token_pair(user), "is_new_user": is_new_user}, outcome
+        result = self._authenticate(db, phone, code, AuthenticationIntent.SIGN_IN)
+        return {**self._auth_payload(result.account), "is_new_user": result.is_new_user}, result.outcome
+
+    def _authenticate(self, db: Session, phone: str, code: str, intent: AuthenticationIntent):
+        use_case = AuthenticateBySms(
+            SqlAccountRepository(db), lambda candidate, otp: self.verify_code(db, candidate, otp), utcnow()
+        )
+        return use_case.execute(phone, code, intent)
+
+    def _auth_payload(self, user: User) -> dict:
+        return {"user": user.to_dict(), "tokens": self.create_token_pair(user)}
 
     def blacklist_token(self, db: Session, payload: dict, reason: str = "logout") -> None:
         jti = payload.get("jti")
