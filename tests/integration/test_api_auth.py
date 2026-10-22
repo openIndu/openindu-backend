@@ -96,6 +96,7 @@ class TestSendCode:
             assert response.status_code == 200
             data = response.json()
             assert data["code"] == 200
+            assert data["biz_code"] == "AUTH_SMS_SENT"
             assert "验证码" in data["message"]
             mock_send.assert_called_once()
 
@@ -127,17 +128,19 @@ class TestRegisterAndLogin:
             assert response.status_code == 200
             data = response.json()
             assert data["code"] == 200
+            assert data["biz_code"] == "AUTH_REGISTER_SUCCESS"
             assert data["data"]["tokens"]["access_token"] == "test-access-token"
             assert data["data"]["user"]["phone"] == "13800138000"
 
     def test_register_duplicate(self):
         """Registering same phone twice should fail."""
-        from fastapi import HTTPException
+        from app.domain.auth import AuthError, BizCode
 
         client = _make_client(self.app)
-        with patch("app.api.auth.auth_service.register", side_effect=HTTPException(status_code=409, detail="用户已存在")):
+        with patch("app.api.auth.auth_service.register", side_effect=AuthError(BizCode.AUTH_USER_EXISTS)):
             response = client.post("/api/v1/auth/register", json={"phone": "13800138002", "code": "888888"})
             assert response.status_code == 409
+            assert response.json()["biz_code"] == "AUTH_USER_EXISTS"
 
     def test_login_success(self):
         """Login should succeed."""
@@ -145,16 +148,29 @@ class TestRegisterAndLogin:
         with patch("app.api.auth.auth_service.login", return_value={"user": self.user.to_dict(), "tokens": self.tokens}):
             response = client.post("/api/v1/auth/login", json={"phone": "13800138003", "code": "888888"})
             assert response.status_code == 200
+            assert response.json()["biz_code"] == "AUTH_LOGIN_SUCCESS"
             assert response.json()["data"]["user"]["phone"] == "13800138000"
 
     def test_login_unregistered(self):
         """Login with unregistered phone should fail."""
-        from fastapi import HTTPException
+        from app.domain.auth import AuthError, BizCode
 
         client = _make_client(self.app)
-        with patch("app.api.auth.auth_service.login", side_effect=HTTPException(status_code=404, detail="用户不存在，请先注册")):
+        with patch("app.api.auth.auth_service.login", side_effect=AuthError(BizCode.AUTH_USER_NOT_FOUND)):
             response = client.post("/api/v1/auth/login", json={"phone": "13900000000", "code": "888888"})
-            assert response.status_code == 404
+            assert response.status_code == 400
+            assert response.json()["biz_code"] == "AUTH_USER_NOT_FOUND"
+
+    def test_sign_in_returns_domain_outcome(self):
+        from app.domain.auth import BizCode
+
+        client = _make_client(self.app)
+        account = {"user": self.user.to_dict(), "tokens": self.tokens, "is_new_user": True}
+        with patch("app.api.auth.auth_service.sign_in", return_value=(account, BizCode.AUTH_ACCOUNT_CREATED)):
+            response = client.post("/api/v1/auth/sign-in", json={"phone": "13800138000", "code": "888888"})
+        assert response.status_code == 200
+        assert response.json()["biz_code"] == "AUTH_ACCOUNT_CREATED"
+        assert response.json()["data"]["is_new_user"] is True
 
     def test_me_authenticated(self):
         """GET /me with valid token should return user info."""
@@ -299,7 +315,7 @@ class TestSliderCaptcha:
     def test_slider_verify_wrong_offset_rejected(self):
         data, row = self._issue()
         response = self.client.post("/api/v1/auth/slider-captcha/verify", json={
-            "challenge_id": data["challenge_id"], "x": row.x + 6})
+            "challenge_id": data["challenge_id"], "x": row.x + row.tolerance + 1})
         assert response.status_code == 400
         assert "滑块验证未通过" in response.json()["detail"]
 

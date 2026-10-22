@@ -49,7 +49,7 @@ def test_documents_helpers_and_edges(monkeypatch):
     assert documents.client_ip(_Request()) == "127.0.0.1"
 
     db = MagicMock()
-    doc = SimpleNamespace(id=1, oss_key="docs/a.pdf", original_name="a.pdf", download_count=None)
+    doc = SimpleNamespace(id=1, oss_key="docs/a.pdf", original_name="a.pdf", download_count=None, is_published=True)
     db.query.side_effect = [_chain(first=doc), _chain(count=0)]
     monkeypatch.setattr(documents.storage_service, "get_download_url", lambda key: {"url": f"/files/{key}", "expires_in": None})
     result = asyncio.run(documents.get_document_download_link(1, _Request(), db, _user("member")))
@@ -66,10 +66,10 @@ def test_documents_list_upload_get(monkeypatch):
     from app.api import documents
 
     db = MagicMock()
-    doc = SimpleNamespace(id=1, oss_key="docs/a.pdf", original_name="a.pdf")
+    doc = SimpleNamespace(id=1, oss_key="docs/a.pdf", original_name="a.pdf", is_published=True)
     doc.to_dict = lambda: {"id": doc.id}
     db.query.return_value = _chain(items=[doc], count=1)
-    result = asyncio.run(documents.list_documents(brand="siemens", keyword="a", page=1, size=20, sort_by="upload_time", sort_order="desc", db=db))
+    result = asyncio.run(documents.list_documents(brand="siemens", keyword="a", page=1, size=20, sort_by="upload_time", sort_order="desc", db=db, viewer=_user()))
     assert result["data"]["total"] == 1
 
     db = MagicMock()
@@ -86,12 +86,12 @@ def test_documents_list_upload_get(monkeypatch):
     async def read():
         return b"%PDF"
     file.read = read
-    result = asyncio.run(documents.upload_document(file=file, brand="siemens", category="plc-manual", series="", description="desc", db=db, admin=_user()))
+    result = asyncio.run(documents.upload_document(file=file, brand="siemens", category="plc-manual", series="", description="desc", db=db, user=_user()))
     assert "上传成功" in result["message"]
 
     db = MagicMock()
     db.query.return_value = _chain(first=doc)
-    result = asyncio.run(documents.get_document(1, db=db))
+    result = asyncio.run(documents.get_document(1, db=db, viewer=_user()))
     assert result["data"]["id"] == 1
 
 
@@ -159,6 +159,8 @@ def test_software_responses_do_not_expose_legacy_series():
             description="desc",
             created_at=datetime(2026, 1, 1),
             latest_version="1.0",
+            submission_status="published",
+            rejected_reason=None,
         ),
         oss_key="soft/tool.zip",
         original_name="Tool.zip",
@@ -171,7 +173,7 @@ def test_software_responses_do_not_expose_legacy_series():
     )
     db = MagicMock()
     db.query.return_value = _chain(items=[version], count=1)
-    result = asyncio.run(software.list_software(expand_versions=True, page=1, size=20, sort_by="upload_time", sort_order="desc", db=db))
+    result = asyncio.run(software.list_software(expand_versions=True, page=1, size=20, sort_by="upload_time", sort_order="desc", db=db, viewer=_user()))
     assert "series" not in result["data"]["items"][0]
 
 
@@ -221,7 +223,7 @@ def test_software_download_and_delete(monkeypatch):
 def test_software_list_upload_get_add_delete(monkeypatch):
     from app.api import software
 
-    sw = SimpleNamespace(id=1, original_name="Tool.zip", brand="siemens", latest_version="1.0", download_count=0)
+    sw = SimpleNamespace(id=1, original_name="Tool.zip", brand="siemens", latest_version="1.0", download_count=0, is_published=True)
     sw.to_dict = lambda include_versions=False: {"id": sw.id}
     sw.versions = []
     ver = SimpleNamespace(id=10, software_id=1, version="2.0", oss_key="software/new.zip")
@@ -229,12 +231,12 @@ def test_software_list_upload_get_add_delete(monkeypatch):
 
     db = MagicMock()
     db.query.return_value = _chain(items=[sw], count=1)
-    result = asyncio.run(software.list_software(page=1, size=20, keyword="Tool", db=db))
+    result = asyncio.run(software.list_software(page=1, size=20, keyword="Tool", db=db, viewer=_user()))
     assert result["data"]["total"] == 1
 
     db = MagicMock()
     db.query.return_value = _chain(first=sw)
-    assert asyncio.run(software.get_software(1, db=db))["data"]["id"] == 1
+    assert asyncio.run(software.get_software(1, db=db, viewer=_user()))["data"]["id"] == 1
 
     monkeypatch.setattr(software.storage_service, "upload_file", lambda c, n, p, t: {"oss_key": "software/x.zip", "filename": "x.zip", "file_size": 100, "file_hash": "abc"})
     file = MagicMock()
@@ -252,7 +254,7 @@ def test_software_list_upload_get_add_delete(monkeypatch):
         _chain(items=[SimpleNamespace(value="utility")]),
     ]
     db.flush = lambda: None
-    assert asyncio.run(software.upload_software(file=file, brand="siemens", category="utility", version="1.0", description="desc", db=db, admin=_user()))["message"] == "上传成功"
+    assert asyncio.run(software.upload_software(file=file, brand="siemens", category="utility", version="1.0", description="desc", db=db, user=_user()))["message"] == "上传成功"
 
     db = MagicMock()
     db.query.return_value = _chain(first=sw)
@@ -560,13 +562,15 @@ def test_geo_distribution_endpoint_windows_per_range(monkeypatch):
     db = MagicMock()
 
     asyncio.run(stats.geo_distribution_stats(range="month", db=db, admin=_user()))
-    expected_month = stats._month_range_utc()
-    assert captured[-1] == expected_month
+    expected_month = stats._last_30_days_range_utc()
+    assert captured[-1][0] == expected_month[0]
+    assert abs((captured[-1][1] - expected_month[1]).total_seconds()) < 5
 
     asyncio.run(stats.geo_distribution_stats(range="day", db=db, admin=_user()))
     expected_day = stats._today_range_utc()
     assert captured[-1] == expected_day
     assert captured[-1] != expected_month
+    assert expected_month[0] < expected_day[0] < expected_month[1] <= expected_day[1]
 
     before = datetime.utcnow()
     asyncio.run(stats.geo_distribution_stats(range="year", db=db, admin=_user()))
@@ -748,10 +752,12 @@ def test_visit_tracking_rejects_unknown_event_type():
     assert exc.value.status_code == 400
 
 def test_auth_service_validate_phone(monkeypatch):
+    from app.domain.auth import AuthError, BizCode
     from app.services.auth_service import AuthService
 
-    with pytest.raises(HTTPException):
+    with pytest.raises(AuthError) as exc:
         AuthService._validate_phone("1234")
+    assert exc.value.code == BizCode.AUTH_INVALID_PHONE
 
     monkeypatch.setattr("app.services.auth_service.settings", SimpleNamespace(
         SMS_MOCK_ENABLED=True, SMS_MOCK_CODE="123456", JWT_SECRET_KEY="test", JWT_ALGORITHM="HS256",
@@ -827,8 +833,11 @@ def test_auth_service_login(monkeypatch):
     user.to_dict = lambda: {"id": 1}
     db.query.return_value = _chain(first=user)
 
-    with pytest.raises(HTTPException):
+    from app.domain.auth import AuthError, BizCode
+
+    with pytest.raises(AuthError) as exc:
         service.login(db, "13800138000", "wrong-code")
+    assert exc.value.code == BizCode.AUTH_INVALID_CODE
 
 
 def test_auth_service_register(monkeypatch):
@@ -911,7 +920,8 @@ def _direct_upload_token(claims_extra: dict) -> str:
     from app.core.config import settings
     claims = {"oss_key": "software/siemens/abc.zip", "filename": "t.zip", "brand": "siemens",
               "category": "utility", "version": "1.0", "description": "",
-              "content_type": "application/zip", "size": 100}
+              "content_type": "application/zip", "size": 100,
+              "is_admin": True, "submitted_by": None}
     claims.update(claims_extra)
     return jwt.encode(claims, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
@@ -924,7 +934,7 @@ def test_software_direct_upload_init_local(monkeypatch):
                             _chain(items=[SimpleNamespace(value="utility")])]
     body = software.UploadInitBody(filename="t.zip", brand="siemens", category="utility",
                                    version="1.0", size=100)
-    result = asyncio.run(software.upload_init(body, db=db, admin=_user()))
+    result = asyncio.run(software.upload_init(body, db=db, user=_user()))
     assert result["data"]["mode"] == "sync"
 
 
@@ -941,7 +951,7 @@ def test_software_direct_upload_init_multipart(monkeypatch):
     body = software.UploadInitBody(filename="t.zip", brand="siemens", category="utility",
                                    version="1.0", content_type="application/zip",
                                    size=software.settings.UPLOAD_PART_SIZE_MB * 1024 * 1024 + 1)
-    result = asyncio.run(software.upload_init(body, db=db, admin=_user()))
+    result = asyncio.run(software.upload_init(body, db=db, user=_user()))
     data = result["data"]
     assert data["mode"] == "multipart"
     assert len(data["part_urls"]) == 2
@@ -965,7 +975,7 @@ def test_software_direct_upload_init_single(monkeypatch):
                             _chain(items=[SimpleNamespace(value="utility")])]
     body = software.UploadInitBody(filename="t.zip", brand="siemens", category="utility",
                                    version="1.0", size=1024)
-    data = asyncio.run(software.upload_init(body, db=db, admin=_user()))["data"]
+    data = asyncio.run(software.upload_init(body, db=db, user=_user()))["data"]
     assert data["mode"] == "single"
     assert data["upload_url"] == "https://oss/single"
 
@@ -984,7 +994,7 @@ def test_software_direct_upload_complete_multipart(monkeypatch):
     db.flush = lambda: None
     parts = [software.UploadPartResult(part_number=2, etag="B"), software.UploadPartResult(part_number=1, etag="A")]
     body = software.UploadCompleteBody(token=token, parts=parts)
-    result = asyncio.run(software.upload_complete(body, db=db, admin=_user()))
+    result = asyncio.run(software.upload_complete(body, db=db, user=_user()))
     assert result["message"] == "上传成功"
 
 
@@ -1000,7 +1010,7 @@ def test_software_direct_upload_complete_single(monkeypatch):
     db.query.return_value = _chain(first=None)
     db.flush = lambda: None
     body = software.UploadCompleteBody(token=token)
-    assert asyncio.run(software.upload_complete(body, db=db, admin=_user()))["message"] == "上传成功"
+    assert asyncio.run(software.upload_complete(body, db=db, user=_user()))["message"] == "上传成功"
 
 
 def test_software_direct_upload_complete_single_missing(monkeypatch):
@@ -1011,7 +1021,7 @@ def test_software_direct_upload_complete_single_missing(monkeypatch):
     monkeypatch.setattr(oss_mod.oss_service, "head_object", lambda *a, **k: False)
     token = _direct_upload_token({"mode": "single"})
     with pytest.raises(HTTPException):
-        asyncio.run(software.upload_complete(software.UploadCompleteBody(token=token), db=MagicMock(), admin=_user()))
+        asyncio.run(software.upload_complete(software.UploadCompleteBody(token=token), db=MagicMock(), user=_user()))
 
 
 def test_software_direct_upload_abort(monkeypatch):
@@ -1022,11 +1032,11 @@ def test_software_direct_upload_abort(monkeypatch):
     called = {}
     monkeypatch.setattr(oss_mod.oss_service, "abort_multipart_upload", lambda *a, **k: called.setdefault("aborted", True))
     token = _direct_upload_token({"mode": "multipart", "upload_id": "uid-1"})
-    asyncio.run(software.upload_abort(software.UploadAbortBody(token=token), admin=_user()))
+    asyncio.run(software.upload_abort(software.UploadAbortBody(token=token), user=_user()))
     assert called.get("aborted") is True
 
 
 def test_software_direct_upload_bad_token():
     from app.api import software
     with pytest.raises(HTTPException):
-        asyncio.run(software.upload_complete(software.UploadCompleteBody(token="bad"), db=MagicMock(), admin=_user()))
+        asyncio.run(software.upload_complete(software.UploadCompleteBody(token="bad"), db=MagicMock(), user=_user()))

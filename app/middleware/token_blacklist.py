@@ -8,6 +8,8 @@ from starlette.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.database import SessionLocal
+from app.core.err_code import ErrorCode
+from app.domain.auth import BizCode
 from app.models.token_blacklist import TokenBlacklist
 from app.models.user import User
 
@@ -24,20 +26,20 @@ class TokenBlacklistMiddleware(BaseHTTPMiddleware):
                 try:
                     # Check jti blacklist
                     if jti and db.query(TokenBlacklist).filter(TokenBlacklist.jti == jti).first():
-                        return JSONResponse(status_code=401, content={"code": 401, "detail": "Token 已被撤销"})
+                        return JSONResponse(status_code=401, content=ErrorCode.error_body(BizCode.AUTH_TOKEN_REVOKED))
 
                     # Check user blacklist and token invalidation
                     user_id = payload.get("sub")
                     if user_id:
                         user = db.query(User).filter(User.id == int(user_id)).first()
                         if user and user.is_blacklisted:
-                            return JSONResponse(status_code=401, content={"code": 401, "detail": "账号已被禁用"})
+                            return JSONResponse(status_code=401, content=ErrorCode.error_body(BizCode.AUTH_TOKEN_ACCOUNT_DISABLED))
                         if user and user.tokens_invalidated_at:
                             iat = payload.get("iat")
                             if iat:
                                 token_issued_at = datetime.fromtimestamp(iat, tz=UTC).replace(tzinfo=None)
                                 if user.tokens_invalidated_at > token_issued_at:
-                                    return JSONResponse(status_code=401, content={"code": 401, "detail": "Token 已被撤销（强制登出）"})
+                                    return JSONResponse(status_code=401, content=ErrorCode.error_body(BizCode.AUTH_FORCED_LOGOUT))
                 finally:
                     db.close()
             except JWTError:

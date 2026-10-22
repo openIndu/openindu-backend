@@ -12,7 +12,7 @@ class SliderChallenge(Base):
     # distance and it must land within `tolerance` pixels.
     x = Column(Integer, nullable=False)
     y = Column(Integer, nullable=False)
-    tolerance = Column(Integer, nullable=False, default=5)
+    tolerance = Column(Integer, nullable=False, default=10)
     # Verified challenges carry a short-lived single-use ticket that
     # /auth/send-code consumes instead of the raw answer.
     verified = Column(Boolean, nullable=False, default=False)

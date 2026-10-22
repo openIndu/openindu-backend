@@ -2,6 +2,7 @@
 import logging
 
 from app.core.config import settings
+from app.core.utils import mask_phone
 
 logger = logging.getLogger(__name__)
 
@@ -47,16 +48,15 @@ class SmsService:
     def send_member_approved(cls, phone: str) -> bool:
         """Notify an applicant that their membership was approved.
 
-        Returns True when a notice went out (or mock mode swallowed it — mock
-        IS the configured delivery path in dev), False when real mode has no
-        approval template configured yet. Real send errors propagate to the
-        caller, who is expected to keep the approval and log.
+        Returns True only when the SMS provider accepted the notice. Mock mode
+        and missing templates return False so the admin UI never claims a
+        message was delivered. Real send errors propagate to the caller.
         """
         if settings.SMS_MOCK_ENABLED:
-            logger.info("SMS mock mode: skip member-approved notice to %s", phone)
-            return True
+            logger.info("SMS mock mode: skip member-approved notice to %s", mask_phone(phone))
+            return False
         if not settings.SMS_APPROVAL_TEMPLATE_ID:
-            logger.warning("SMS_APPROVAL_TEMPLATE_ID not set; cannot notify member approval to %s", phone)
+            logger.warning("SMS_APPROVAL_TEMPLATE_ID not set; cannot notify member approval to %s", mask_phone(phone))
             return False
         cls.send(phone, settings.SMS_APPROVAL_TEMPLATE_ID)
         return True
