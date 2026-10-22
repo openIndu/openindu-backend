@@ -26,8 +26,8 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Backend repo root: app/services/geo_service.py -> parents[2]
-_BACKEND_ROOT = Path(__file__).resolve().parents[2]
+# Backend repo root: app/analytics/infrastructure/geo.py -> parents[3]
+_BACKEND_ROOT = Path(__file__).resolve().parents[3]
 
 # Map coordinates. China is plotted per-province (keys are normalized province
 # stems, see _province_key); everything else is plotted per country code.

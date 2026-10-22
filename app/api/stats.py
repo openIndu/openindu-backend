@@ -1,283 +1,69 @@
 """Online statistics and dashboard API."""
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, literal_column, or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.analytics.domain.windows import (
+    CST,
+)
+from app.analytics.domain.windows import (
+    last_30_days_range_utc as _last_30_days_range_utc,
+)
+from app.analytics.domain.windows import (
+    month_range_utc as _month_range_utc,
+)
+from app.analytics.domain.windows import (
+    now_utc as _now,
+)
+from app.analytics.domain.windows import (
+    today_range_utc as _today_range_utc,
+)
+from app.analytics.domain.windows import (
+    trailing_12_months as _trailing_12_months,
+)
+from app.analytics.infrastructure.visit_queries import (
+    cst_day as _cst_day,
+)
+from app.analytics.infrastructure.visit_queries import (
+    cst_month as _cst_month,
+)
+from app.analytics.infrastructure.visit_queries import (
+    geo_distribution as _geo_distribution,
+)
+from app.analytics.infrastructure.visit_queries import (
+    month_new_members_count as _month_new_members_count,
+)
+from app.analytics.infrastructure.visit_queries import (
+    monthly_new_members as _monthly_new_members,
+)
+from app.analytics.infrastructure.visit_queries import (
+    pv_count as _pv_count,
+)
+from app.analytics.infrastructure.visit_queries import (
+    uv_count as _uv_count,
+)
+from app.analytics.infrastructure.visit_queries import (
+    visitor_key as _visitor_key,
+)
+from app.analytics.infrastructure.visit_queries import (
+    yearly_new_members as _yearly_new_members,
+)
+from app.analytics.infrastructure.visit_queries import (
+    yearly_registrations as _yearly_registrations,
+)
 from app.core.dependencies import get_db, require_admin
 from app.core.utils import iso_utc, mask_phone, ok
-from app.models.admin_audit_log import AdminAuditLog
 from app.models.chat_message import ChatMessage
 from app.models.document import Document
 from app.models.login_session import LoginSession
 from app.models.software import Software
 from app.models.user import User
 from app.models.visit_event import VisitEvent
-from app.services.geo_service import lookup_point
 
 router = APIRouter(prefix="/stats")
-
-CST = timezone(timedelta(hours=8))  # Asia/Shanghai
-
-
-def _cst_day(timestamp):
-    """Group a naive UTC database timestamp by its Asia/Shanghai date."""
-    return func.date(timestamp + literal_column("INTERVAL '8 hours'"))
-
-
-def _cst_month(timestamp):
-    """Group a naive UTC database timestamp by its Asia/Shanghai month."""
-    return func.to_char(timestamp + literal_column("INTERVAL '8 hours'"), "YYYY-MM")
-
-
-def _now():
-    return datetime.now(UTC).replace(tzinfo=None)
-
-
-def _to_naive_utc(dt: datetime) -> datetime:
-    """Convert a timezone-aware datetime to naive UTC for DB comparison."""
-    return dt.astimezone(UTC).replace(tzinfo=None)
-
-
-def _today_range_utc() -> tuple[datetime, datetime]:
-    """Return [today 00:00 CST, tomorrow 00:00 CST) as naive UTC."""
-    now_cst = datetime.now(CST)
-    start_cst = now_cst.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_cst = start_cst + timedelta(days=1)
-    return (_to_naive_utc(start_cst), _to_naive_utc(end_cst))
-
-
-def _month_range_utc() -> tuple[datetime, datetime]:
-    """Return [1st of this month 00:00 CST, 1st of next month 00:00 CST) as naive UTC."""
-    now_cst = datetime.now(CST)
-    start_cst = now_cst.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    if start_cst.month == 12:
-        end_cst = start_cst.replace(year=start_cst.year + 1, month=1)
-    else:
-        end_cst = start_cst.replace(month=start_cst.month + 1)
-    return (_to_naive_utc(start_cst), _to_naive_utc(end_cst))
-
-
-def _last_30_days_range_utc() -> tuple[datetime, datetime]:
-    """Return the last 30 CST calendar days, including today, through now."""
-    now = _now()
-    today_start, _ = _today_range_utc()
-    return today_start - timedelta(days=29), now
-
-
-def _trailing_12_months() -> tuple[list[tuple[int, int]], datetime]:
-    """Return (months, year_start_utc) for the trailing 12 months ending this month (CST).
-
-    ``months`` is oldest-first [(year, month), ...], length 12. ``year_start_utc``
-    is the 1st of the oldest month, 00:00 CST, as naive UTC. This is the single
-    shared window used by every yearly_* series on the dashboard and by
-    GET /stats/geo-distribution?range=year — compute it once, reuse it, never
-    re-derive it independently.
-    """
-    today_cst = datetime.now(CST).date()
-    months: list[tuple[int, int]] = []
-    y, m = today_cst.year, today_cst.month
-    for _ in range(12):
-        months.append((y, m))
-        m -= 1
-        if m == 0:
-            m = 12
-            y -= 1
-    months.reverse()
-
-    year_start_cst = datetime(months[0][0], months[0][1], 1, tzinfo=CST)
-    return months, _to_naive_utc(year_start_cst)
-
-
-def _visitor_key():
-    """Browser visitor key for UV: client_id first, historical rows by IP."""
-    return func.coalesce(VisitEvent.client_id, func.concat("ip:", VisitEvent.ip_address))
-
-
-def _quality_visit_query(db: Session):
-    """Count consented page views even when IP geolocation is unavailable."""
-    return db.query(VisitEvent).filter(
-        VisitEvent.event_type == "page_view",
-        VisitEvent.geo_location.is_distinct_from("本地开发"),
-    )
-
-
-def _pv_count(db: Session, start: datetime | None = None, end: datetime | None = None) -> int:
-    q = _quality_visit_query(db)
-    if start is not None:
-        q = q.filter(VisitEvent.created_at >= start)
-    if end is not None:
-        q = q.filter(VisitEvent.created_at < end)
-    return q.with_entities(func.count(VisitEvent.id)).scalar() or 0
-
-
-def _uv_count(db: Session, start: datetime | None = None, end: datetime | None = None) -> int:
-    q = _quality_visit_query(db)
-    if start is not None:
-        q = q.filter(VisitEvent.created_at >= start)
-    if end is not None:
-        q = q.filter(VisitEvent.created_at < end)
-    return q.with_entities(func.count(func.distinct(_visitor_key()))).scalar() or 0
-
-
-def _month_new_members_count(db: Session, start: datetime, end: datetime) -> int:
-    """Count distinct members approved (AdminAuditLog action=member_approve) in [start, end).
-
-    Source of truth for "when did someone become a member" is the audit-log row
-    written at approval time (app/api/member_applications.py's approve()) — NOT
-    User.member_apply_at, which is the application timestamp and isn't updated
-    on approval, so it can fall in a different month than the actual approval.
-
-    Counts distinct target_user_id, not raw rows: an ordinary demote-then-
-    reapprove admin action writes a second member_approve row for the same
-    user within the same window, which must not double-count as two members.
-    """
-    return (
-        db.query(func.count(func.distinct(AdminAuditLog.target_user_id)))
-        .filter(
-            AdminAuditLog.action == "member_approve",
-            AdminAuditLog.created_at >= start,
-            AdminAuditLog.created_at < end,
-        )
-        .scalar()
-        or 0
-    )
-
-
-def _monthly_new_members(
-    db: Session, start: datetime, end: datetime, dates: list[str]
-) -> list[dict[str, int | str]]:
-    """Distinct member approvals per day for the current-month chart."""
-    rows = (
-        db.query(
-            _cst_day(AdminAuditLog.created_at).label("day"),
-            func.count(func.distinct(AdminAuditLog.target_user_id)).label("cnt"),
-        )
-        .filter(
-            AdminAuditLog.action == "member_approve",
-            AdminAuditLog.created_at >= start,
-            AdminAuditLog.created_at < end,
-        )
-        .group_by(_cst_day(AdminAuditLog.created_at))
-        .order_by(_cst_day(AdminAuditLog.created_at))
-        .all()
-    )
-    approve_map = {str(row.day): row.cnt for row in rows}
-    return [{"date": day, "count": approve_map.get(day, 0)} for day in dates]
-
-
-def _yearly_registrations(db: Session, year_start_utc: datetime, months: list[tuple[int, int]]) -> list[dict[str, int | str]]:
-    """New user signups per month, trailing 12 months — same bucketing as yearly_pv/yearly_uv."""
-    rows = (
-        db.query(
-            _cst_month(User.created_at).label("ym"),
-            func.count(User.id).label("cnt"),
-        )
-        .filter(User.created_at >= year_start_utc)
-        .group_by("ym")
-        .all()
-    )
-    reg_map = {r.ym: r.cnt for r in rows}
-    return [{"date": f"{yy:04d}-{mm:02d}", "count": reg_map.get(f"{yy:04d}-{mm:02d}", 0)} for yy, mm in months]
-
-
-def _yearly_new_members(db: Session, year_start_utc: datetime, months: list[tuple[int, int]]) -> list[dict[str, int | str]]:
-    """Distinct members approved per month, trailing 12 months — same bucketing as yearly_pv/yearly_uv.
-
-    Counts distinct target_user_id per month, not raw rows — see
-    _month_new_members_count for why (demote-then-reapprove writes a second
-    member_approve row for the same user).
-    """
-    rows = (
-        db.query(
-            _cst_month(AdminAuditLog.created_at).label("ym"),
-            func.count(func.distinct(AdminAuditLog.target_user_id)).label("cnt"),
-        )
-        .filter(
-            AdminAuditLog.action == "member_approve",
-            AdminAuditLog.created_at >= year_start_utc,
-        )
-        .group_by("ym")
-        .all()
-    )
-    approve_map = {r.ym: r.cnt for r in rows}
-    return [{"date": f"{yy:04d}-{mm:02d}", "count": approve_map.get(f"{yy:04d}-{mm:02d}", 0)} for yy, mm in months]
-
-
-def _geo_distribution(db: Session, start: datetime, end: datetime) -> list[dict[str, int | float | str]]:
-    """Geo-distribution rows for visit_events in [start, end).
-
-    Anonymous and authenticated visits are counted independently against
-    ip_address (anon) / user_id (auth) so the two columns are honest and never
-    need subtraction guards. Shared by the dashboard's (month-scoped, for
-    back-compat) geo_distribution field and by GET /stats/geo-distribution
-    (day/month/year selectable). Per-entry shape: name, country_code, lat, lng,
-    visitors, registrations, online, anonymous.
-    """
-    geo: dict[str, dict[str, int | float | str]] = {}
-    anon_geo_rows = (
-        db.query(
-            VisitEvent.geo_location.label("name"),
-            VisitEvent.country_code.label("country_code"),
-            func.count(func.distinct(VisitEvent.ip_address)).label("anonymous"),
-        )
-        .filter(
-            VisitEvent.user_id.is_(None),
-            VisitEvent.created_at >= start,
-            VisitEvent.created_at < end,
-        )
-        .group_by(VisitEvent.geo_location, VisitEvent.country_code)
-        .all()
-    )
-    for row in anon_geo_rows:
-        name = row.name or "未知"
-        point = lookup_point(name, row.country_code)
-        geo[name] = {
-            "name": name,
-            "country_code": row.country_code or point["country_code"],
-            "lat": point["lat"],
-            "lng": point["lng"],
-            "visitors": int(row.anonymous or 0),  # legacy field — total dot weight; populated by both buckets below
-            "registrations": 0,
-            "online": 0,
-            "anonymous": int(row.anonymous or 0),
-        }
-
-    auth_geo_rows = (
-        db.query(
-            VisitEvent.geo_location.label("name"),
-            VisitEvent.country_code.label("country_code"),
-            func.count(func.distinct(VisitEvent.user_id)).label("authenticated"),
-        )
-        .filter(
-            VisitEvent.user_id.isnot(None),
-            VisitEvent.created_at >= start,
-            VisitEvent.created_at < end,
-        )
-        .group_by(VisitEvent.geo_location, VisitEvent.country_code)
-        .all()
-    )
-    for row in auth_geo_rows:
-        name = row.name or "未知"
-        point = lookup_point(name, row.country_code)
-        auth_n = int(row.authenticated or 0)
-        entry = geo.setdefault(name, {
-            "name": name,
-            "country_code": row.country_code or point["country_code"],
-            "lat": point["lat"],
-            "lng": point["lng"],
-            "visitors": 0,
-            "registrations": 0,
-            "online": 0,
-            "anonymous": 0,
-        })
-        entry["online"] = int(entry["online"]) + auth_n  # "online" is the legacy field name the map renders for the auth bucket
-        entry["registrations"] = int(entry["registrations"]) + auth_n
-        entry["visitors"] = int(entry["visitors"]) + auth_n
-
-    return sorted(geo.values(), key=lambda x: -(int(x["anonymous"]) + int(x["online"])))
 
 
 @router.get("/dashboard")
