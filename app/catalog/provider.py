@@ -1,4 +1,4 @@
-"""Composition root for the catalog context (software side; documents follow)."""
+"""Composition root for the catalog context (software, documents, tags)."""
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
@@ -13,6 +13,16 @@ from app.catalog.application.admin import (
     ToggleVersionPublishing,
     UpdateSoftwareEntry,
 )
+from app.catalog.application.documents import (
+    BulkSetDocumentPublishing,
+    DeleteDocument,
+    IssueDocumentLink,
+    ReviewDocumentSubmission,
+    SubmitDocument,
+    ToggleDocumentPublishing,
+    UpdateDocumentEntry,
+    WithdrawDocumentSubmission,
+)
 from app.catalog.application.downloads import IssueSoftwareDownloadLink
 from app.catalog.application.submissions import (
     AbortDirectUpload,
@@ -22,9 +32,12 @@ from app.catalog.application.submissions import (
     SubmitSoftwarePackage,
     WithdrawSoftwareSubmission,
 )
+from app.catalog.application.tags import CreateTag, DeleteTag, UpdateTag
 from app.catalog.infrastructure.repositories import (
+    SqlDocumentCatalog,
     SqlDownloadLedger,
     SqlSoftwareCatalog,
+    SqlTagBoard,
     SqlTagDirectory,
 )
 from app.catalog.infrastructure.storage import (
@@ -56,11 +69,24 @@ class CatalogContext:
     toggle_publish: ToggleSoftwarePublishing
     toggle_version_publish: ToggleVersionPublishing
     delete_software: DeleteSoftware
+    submit_document: SubmitDocument
+    review_document: ReviewDocumentSubmission
+    withdraw_document: WithdrawDocumentSubmission
+    issue_document_link: IssueDocumentLink
+    update_document: UpdateDocumentEntry
+    bulk_publish_documents: BulkSetDocumentPublishing
+    toggle_document_publish: ToggleDocumentPublishing
+    delete_document: DeleteDocument
+    create_tag: CreateTag
+    update_tag: UpdateTag
+    delete_tag: DeleteTag
 
 
 def catalog(db: Session) -> CatalogContext:
     tags = SqlTagDirectory(db)
     sw = SqlSoftwareCatalog(db)
+    docs = SqlDocumentCatalog(db)
+    board = SqlTagBoard(db)
     storage = StoragePackageUploader()
     signer = OssDirectUploadGateway()
     codec = JwtUploadTokenCodec()
@@ -89,4 +115,15 @@ def catalog(db: Session) -> CatalogContext:
         toggle_publish=ToggleSoftwarePublishing(sw),
         toggle_version_publish=ToggleVersionPublishing(sw),
         delete_software=DeleteSoftware(sw, storage),
+        submit_document=SubmitDocument(tags, storage, docs, settings.OSS_DOC_PREFIX, settings.DOCUMENT_MAX_SIZE_MB),
+        review_document=ReviewDocumentSubmission(docs),
+        withdraw_document=WithdrawDocumentSubmission(docs, storage),
+        issue_document_link=IssueDocumentLink(docs, ledger, links, now, settings.DOWNLOAD_DAILY_LIMIT, settings.PREVIEW_DAILY_LIMIT),
+        update_document=UpdateDocumentEntry(docs, tags),
+        bulk_publish_documents=BulkSetDocumentPublishing(docs),
+        toggle_document_publish=ToggleDocumentPublishing(docs),
+        delete_document=DeleteDocument(docs, storage),
+        create_tag=CreateTag(board),
+        update_tag=UpdateTag(board),
+        delete_tag=DeleteTag(board),
     )

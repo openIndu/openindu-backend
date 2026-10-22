@@ -262,8 +262,8 @@ def _doc_meta(filename="manual.pdf"):
 
 
 def _upload_document(client):
-    with patch("app.api.documents.storage_service.upload_file", return_value=_doc_meta()), \
-         patch("app.api.documents.storage_service.delete_file"):
+    with patch("app.catalog.infrastructure.storage.storage_service.upload_file", return_value=_doc_meta()), \
+         patch("app.catalog.infrastructure.storage.storage_service.delete_file"):
         return client.post(
             "/api/v1/documents/upload",
             files={"file": ("manual.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")},
@@ -324,7 +324,7 @@ class TestDocumentSubmissions:
         resp = _client_as(member2).delete(f"/api/v1/documents/my-submissions/{doc_id}")
         assert resp.status_code == 404
         client = _client_as(member)
-        with patch("app.api.documents.storage_service.delete_file") as del_file:
+        with patch("app.catalog.infrastructure.storage.storage_service.delete_file") as del_file:
             resp = client.delete(f"/api/v1/documents/my-submissions/{doc_id}")
         assert resp.status_code == 200, resp.text
         assert del_file.called

@@ -47,3 +47,6 @@ class OssDirectUploadGateway:
 class StorageLinkSigner:
     def download_url(self, oss_key: str) -> dict:
         return storage_service.get_download_url(oss_key)
+
+    def preview_url(self, oss_key: str) -> dict:
+        return storage_service.get_preview_url(oss_key)

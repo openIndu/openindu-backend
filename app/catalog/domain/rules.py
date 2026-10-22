@@ -77,13 +77,13 @@ def require_member_new_entry(role: str, software_id: int | None) -> None:
         raise CatalogError(CatalogCode.MEMBER_CANNOT_ADD_VERSION)
 
 
-def require_download_quota(role: str, used_today: int, daily_limit: int) -> None:
+def require_download_quota(role: str, used_today: int, daily_limit: int, code: CatalogCode = CatalogCode.DOWNLOAD_LIMIT_REACHED, **params: object) -> None:
     # Admins bypass the 5/day cap — they curate the catalog and shouldn't be
     # locked out while validating uploads or fielding member tickets.
     if role == "admin":
         return
     if used_today >= daily_limit:
-        raise CatalogError(CatalogCode.DOWNLOAD_LIMIT_REACHED)
+        raise CatalogError(code, **params)
 
 
 def require_selection(ids: list[int] | None, code: CatalogCode) -> None:
@@ -91,11 +91,29 @@ def require_selection(ids: list[int] | None, code: CatalogCode) -> None:
         raise CatalogError(code)
 
 
-def require_non_empty_name(name: str | None) -> str:
+def require_non_empty_name(name: str | None, code: CatalogCode = CatalogCode.NAME_REQUIRED) -> str:
     stripped = (name or "").strip()
     if not stripped:
-        raise CatalogError(CatalogCode.NAME_REQUIRED)
+        raise CatalogError(code)
     return stripped
+
+
+def require_valid_pdf(filename: str | None) -> None:
+    if not filename or not filename.lower().endswith(".pdf"):
+        raise CatalogError(CatalogCode.DOC_UNSUPPORTED_FORMAT)
+
+
+def require_document_size(size_bytes: int, max_size_mb: int) -> None:
+    if size_bytes > max_size_mb * 1024 * 1024:
+        raise CatalogError(CatalogCode.FILE_TOO_LARGE)
+
+
+def require_valid_series(series: str | None, exists: bool) -> None:
+    """A series must be an active tag under (brand, category); empty is fine."""
+    if not series:
+        return
+    if not exists:
+        raise CatalogError(CatalogCode.INVALID_SERIES)
 
 
 def today_start(now: datetime) -> datetime:
