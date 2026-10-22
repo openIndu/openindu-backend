@@ -1,6 +1,7 @@
 """Chinese fallback messages and HTTP mapping for business outcome codes."""
 
 from app.domain.auth import BizCode
+from app.domain.catalog import CatalogCode
 from app.domain.membership import MemberCode
 
 
@@ -45,6 +46,29 @@ class ErrorCode:
         MemberCode.USER_ALREADY_DELETED: "用户已删除",
         MemberCode.CANNOT_DELETE_SELF: "不能删除当前登录的管理员账号",
         MemberCode.INVALID_ROLE: "无效角色",
+        CatalogCode.SW_NOT_FOUND: "软件不存在",
+        CatalogCode.SW_VERSION_NOT_FOUND: "软件版本不存在",
+        CatalogCode.SUBMISSION_NOT_FOUND: "投稿不存在",
+        CatalogCode.INVALID_BRAND: "无效品牌",
+        CatalogCode.INVALID_CATEGORY: "无效分类",
+        CatalogCode.UNSUPPORTED_PACKAGE_FORMAT: "不支持的软件包格式",
+        CatalogCode.FILE_TOO_LARGE: "文件大小超过限制",
+        CatalogCode.FILE_SIZE_INVALID: "文件大小无效",
+        CatalogCode.DOWNLOAD_LIMIT_REACHED: "今日软件下载次数已用完（5次/天）",
+        CatalogCode.MEMBER_CANNOT_ADD_VERSION: "会员投稿请新建软件条目，不能为已有软件添加版本",
+        CatalogCode.UPLOAD_TARGET_NOT_FOUND: "软件不存在",
+        CatalogCode.UPLOAD_TOKEN_INVALID: "无效或过期的上传凭证: {reason}",
+        CatalogCode.UPLOAD_TOKEN_UNUSABLE: "无效的上传凭证",
+        CatalogCode.PARTS_MISSING: "缺少分片信息",
+        CatalogCode.MULTIPART_MERGE_FAILED: "合并分片失败，已取消上传",
+        CatalogCode.FILE_NOT_ON_OSS: "文件未上传至 OSS",
+        CatalogCode.VERSION_FILE_EXISTS: "该版本文件已存在，请更换文件名或版本号后重试",
+        CatalogCode.REJECT_REASON_REQUIRED: "请填写驳回理由",
+        CatalogCode.REJECT_PUBLISHED_BLOCKED: "已发布内容不能驳回，请先取消发布",
+        CatalogCode.INVALID_REVIEW_ACTION: "无效的操作",
+        CatalogCode.NAME_REQUIRED: "软件名不能为空",
+        CatalogCode.NO_VERSIONS_SELECTED: "请选择要操作的版本",
+        CatalogCode.NO_SOFTWARE_SELECTED: "请选择要操作的软件",
     }
     _statuses = {
         BizCode.AUTH_INVALID_PHONE: 400,
@@ -74,18 +98,41 @@ class ErrorCode:
         MemberCode.USER_ALREADY_DELETED: 409,
         MemberCode.CANNOT_DELETE_SELF: 400,
         MemberCode.INVALID_ROLE: 400,
+        CatalogCode.SW_NOT_FOUND: 404,
+        CatalogCode.SW_VERSION_NOT_FOUND: 404,
+        CatalogCode.SUBMISSION_NOT_FOUND: 404,
+        CatalogCode.INVALID_BRAND: 400,
+        CatalogCode.INVALID_CATEGORY: 400,
+        CatalogCode.UNSUPPORTED_PACKAGE_FORMAT: 415,
+        CatalogCode.FILE_TOO_LARGE: 413,
+        CatalogCode.FILE_SIZE_INVALID: 400,
+        CatalogCode.DOWNLOAD_LIMIT_REACHED: 429,
+        CatalogCode.MEMBER_CANNOT_ADD_VERSION: 403,
+        CatalogCode.UPLOAD_TARGET_NOT_FOUND: 400,
+        CatalogCode.UPLOAD_TOKEN_INVALID: 400,
+        CatalogCode.UPLOAD_TOKEN_UNUSABLE: 400,
+        CatalogCode.PARTS_MISSING: 400,
+        CatalogCode.MULTIPART_MERGE_FAILED: 500,
+        CatalogCode.FILE_NOT_ON_OSS: 400,
+        CatalogCode.VERSION_FILE_EXISTS: 409,
+        CatalogCode.REJECT_REASON_REQUIRED: 400,
+        CatalogCode.REJECT_PUBLISHED_BLOCKED: 400,
+        CatalogCode.INVALID_REVIEW_ACTION: 400,
+        CatalogCode.NAME_REQUIRED: 400,
+        CatalogCode.NO_VERSIONS_SELECTED: 400,
+        CatalogCode.NO_SOFTWARE_SELECTED: 400,
     }
 
     @classmethod
-    def message(cls, code: BizCode | MemberCode, **params: object) -> str:
+    def message(cls, code: BizCode | MemberCode | CatalogCode, **params: object) -> str:
         return cls._messages[code].format(**params)
 
     @classmethod
-    def status(cls, code: BizCode | MemberCode) -> int:
+    def status(cls, code: BizCode | MemberCode | CatalogCode) -> int:
         return cls._statuses[code]
 
     @classmethod
-    def error_body(cls, code: BizCode | MemberCode, **params: object) -> dict:
+    def error_body(cls, code: BizCode | MemberCode | CatalogCode, **params: object) -> dict:
         status = cls.status(code)
         body = {"code": status, "biz_code": code.value, "detail": cls.message(code, **params)}
         if params:
