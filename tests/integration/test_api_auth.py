@@ -299,7 +299,7 @@ class TestSliderCaptcha:
     def test_slider_verify_wrong_offset_rejected(self):
         data, row = self._issue()
         response = self.client.post("/api/v1/auth/slider-captcha/verify", json={
-            "challenge_id": data["challenge_id"], "x": row.x + 6})
+            "challenge_id": data["challenge_id"], "x": row.x + row.tolerance + 1})
         assert response.status_code == 400
         assert "滑块验证未通过" in response.json()["detail"]
 

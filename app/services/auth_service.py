@@ -1,5 +1,6 @@
 """SMS authentication and JWT lifecycle service."""
 import logging
+import math
 import random
 import re
 import uuid
@@ -20,13 +21,18 @@ from app.services.sms_service import sms_service
 
 logger = logging.getLogger(__name__)
 PHONE_RE = re.compile(r"^1\d{10}$")
+# Per-phone send-code rate limits: minimum seconds between two SMS and the
+# per-natural-day cap. The 429 messages quote these values, so they must
+# stay the single source of truth.
+SMS_RESEND_INTERVAL_SECONDS = 60
+SMS_DAILY_LIMIT = 10
 # Slider-puzzle geometry. The piece body is PIECE px wide; the knob sticks out
 # KNOB px above/beside it, so the sprite canvas is (PIECE+KNOB)².
 SLIDER_WIDTH = 320
 SLIDER_HEIGHT = 160
 SLIDER_PIECE = 44
 SLIDER_KNOB = 10
-SLIDER_TOLERANCE = 5
+SLIDER_TOLERANCE = 10
 # The notch never sits in the leftmost strip (where the piece starts) and the
 # sprite must stay fully inside the background.
 SLIDER_X_RANGE = (SLIDER_WIDTH // 2, SLIDER_WIDTH - SLIDER_PIECE - 6)
@@ -127,27 +133,42 @@ class AuthService:
         from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
         piece_w = SLIDER_PIECE + SLIDER_KNOB
-        # Puzzle-piece silhouette: square body with an outward knob on top and
-        # an inward notch on the right, carved on an L-mode mask (white = opaque).
+        # Puzzle-piece silhouette on an L-mode mask (white = opaque). The body
+        # sits inset by KNOB px so all four jigsaw features fit on the canvas:
+        # an outward knob on top, an outward knob on the left, an inward notch
+        # on the right and an inward notch on the bottom.
         mask = Image.new("L", (piece_w, piece_w), 0)
         draw = ImageDraw.Draw(mask)
-        draw.rounded_rectangle((0, SLIDER_KNOB, SLIDER_PIECE, SLIDER_KNOB + SLIDER_PIECE), radius=6, fill=255)
-        draw.pieslice(
-            (SLIDER_PIECE // 2 - SLIDER_KNOB, 0, SLIDER_PIECE // 2 + SLIDER_KNOB, 2 * SLIDER_KNOB),
-            180,
-            360,
-            fill=255,
+        draw.rounded_rectangle(
+            (SLIDER_KNOB, SLIDER_KNOB, SLIDER_KNOB + SLIDER_PIECE, SLIDER_KNOB + SLIDER_PIECE), radius=6, fill=255
         )
+        cx = SLIDER_KNOB + SLIDER_PIECE // 2
+        cy = SLIDER_KNOB + SLIDER_PIECE // 2
+        draw.pieslice((cx - SLIDER_KNOB, 0, cx + SLIDER_KNOB, 2 * SLIDER_KNOB), 180, 360, fill=255)
+        draw.pieslice((0, cy - SLIDER_KNOB, 2 * SLIDER_KNOB, cy + SLIDER_KNOB), 90, 270, fill=255)
         draw.pieslice(
-            (SLIDER_PIECE - SLIDER_KNOB, SLIDER_KNOB + SLIDER_PIECE // 2 - SLIDER_KNOB,
-             SLIDER_PIECE + SLIDER_KNOB, SLIDER_KNOB + SLIDER_PIECE // 2 + SLIDER_KNOB),
+            (SLIDER_KNOB + SLIDER_PIECE - SLIDER_KNOB, cy - SLIDER_KNOB,
+             SLIDER_KNOB + SLIDER_PIECE + SLIDER_KNOB, cy + SLIDER_KNOB),
             0,
             360,
             fill=0,
         )
-        # A 2px ring around the silhouette marks edges on both the notch and
-        # the sprite; subtracting the mask itself leaves just that ring.
-        outline_mask = ImageChops.subtract(mask.filter(ImageFilter.MaxFilter(5)), mask)
+        draw.pieslice(
+            (cx - SLIDER_KNOB, SLIDER_KNOB + SLIDER_PIECE - SLIDER_KNOB,
+             cx + SLIDER_KNOB, SLIDER_KNOB + SLIDER_PIECE + SLIDER_KNOB),
+            0,
+            360,
+            fill=0,
+        )
+        # A 1px ring just *inside* the silhouette marks edges on both the
+        # notch and the sprite. Erosion runs on a padded copy: filters clip
+        # their kernel at the canvas border, which would drop the ring
+        # exactly where the silhouette touches the canvas (knob apex, edges).
+        pad = 2
+        padded = Image.new("L", (piece_w + 2 * pad, piece_w + 2 * pad), 0)
+        padded.paste(mask, (pad, pad))
+        eroded = padded.filter(ImageFilter.MinFilter(3)).crop((pad, pad, pad + piece_w, pad + piece_w))
+        outline_mask = ImageChops.subtract(mask, eroded)
 
         # Procedural background: vertical gradient plus translucent shapes, so
         # no image assets ship with the app and every challenge looks different.
@@ -178,7 +199,7 @@ class AuthService:
         sprite.alpha_composite(shadow_layer, dest=(1, 2))
         sprite.alpha_composite(body)
         outline_layer = Image.new("RGBA", (piece_w, piece_w), (255, 255, 255, 255))
-        outline_layer.putalpha(outline_mask.point(lambda v: 230 if v else 0))
+        outline_layer.putalpha(outline_mask)
         sprite.alpha_composite(outline_layer)
 
         # Carve the notch: darken it and mark the edge in white so the drop
@@ -188,7 +209,7 @@ class AuthService:
         hole_layer.putalpha(mask.point(lambda v: 160 if v else 0))
         overlay.alpha_composite(hole_layer, dest=(x, y))
         ring_layer = Image.new("RGBA", (piece_w, piece_w), (255, 255, 255, 255))
-        ring_layer.putalpha(outline_mask.point(lambda v: 200 if v else 0))
+        ring_layer.putalpha(outline_mask.point(lambda v: 220 if v else 0))
         overlay.alpha_composite(ring_layer, dest=(x, y))
         background = Image.alpha_composite(background, overlay)
 
@@ -249,14 +270,23 @@ class AuthService:
 
     def send_code(self, db: Session, phone: str, slider_ticket: str | None = None) -> None:
         self._validate_phone(phone)
+        resend_interval = SMS_RESEND_INTERVAL_SECONDS
         now = utcnow()
         latest = db.query(SmsCode).filter(SmsCode.phone == phone).order_by(SmsCode.created_at.desc()).first()
-        if latest and latest.created_at and (now - latest.created_at).total_seconds() < 60:
-            raise HTTPException(status_code=429, detail="验证码发送过于频繁，请稍后再试")
+        elapsed = (now - latest.created_at).total_seconds() if latest and latest.created_at else None
+        if elapsed is not None and elapsed < resend_interval:
+            remaining = max(1, math.ceil(resend_interval - elapsed))
+            raise HTTPException(
+                status_code=429,
+                detail=f"验证码发送过于频繁，请 {remaining} 秒后再试",
+            )
         today_start = datetime(now.year, now.month, now.day)
         today_count = db.query(SmsCode).filter(SmsCode.phone == phone, SmsCode.created_at >= today_start).count()
-        if today_count >= 10:
-            raise HTTPException(status_code=429, detail="今日验证码发送次数已达上限")
+        if today_count >= SMS_DAILY_LIMIT:
+            raise HTTPException(
+                status_code=429,
+                detail=f"今日验证码发送次数已达上限（每日 {SMS_DAILY_LIMIT} 次），请明天再试",
+            )
         # The slider gate runs after the rate limits so a 429 does not burn the
         # user's already-verified ticket.
         if settings.CAPTCHA_ENFORCED:

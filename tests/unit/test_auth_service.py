@@ -387,15 +387,17 @@ class TestSliderCaptcha:
             auth_service.verify_slider_challenge(db_session, result["challenge_id"], row.x)
 
     def test_verify_slider_rejects_out_of_tolerance(self, db_session):
-        """A drag distance beyond ±5px fails and consumes the challenge."""
+        """A drag distance beyond ±tolerance fails and consumes the challenge."""
         from app.models.slider_challenge import SliderChallenge
+        from app.services.auth_service import SLIDER_TOLERANCE
 
         result = auth_service.issue_slider_challenge(db_session)
         row = db_session.query(SliderChallenge).filter(
             SliderChallenge.id == result["challenge_id"]).one()
 
         with pytest.raises(HTTPException, match="滑块验证未通过"):
-            auth_service.verify_slider_challenge(db_session, result["challenge_id"], row.x + 6)
+            auth_service.verify_slider_challenge(
+                db_session, result["challenge_id"], row.x + SLIDER_TOLERANCE + 1)
         db_session.refresh(row)
         assert row.is_used is True
         assert row.verified is False
