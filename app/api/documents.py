@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.dependencies import get_db, require_admin, require_member
-from app.core.utils import ok
+from app.core.utils import iso_utc, ok
 from app.models.document import Document
 from app.models.download_log import DownloadLog
 from app.models.resource_tag import ResourceTag
@@ -129,7 +129,7 @@ async def list_documents(
 
 
 @router.post("/upload")
-async def upload_document(file: UploadFile = File(...), brand: str = Form(...), category: str = Form(...), series: str = Form(""), description: str = Form(""), db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+async def upload_document(file: UploadFile = File(...), brand: str = Form(...), category: str = Form(...), series: str = Form(""), description: str = Form(""), db: Session = Depends(get_db), user: User = Depends(require_member)):
     # 1. 所有前置校验 — 失败时不产生副作用
     brands = _valid_values(db, "doc_brand")
     categories = _valid_values(db, "doc_category")
@@ -147,7 +147,11 @@ async def upload_document(file: UploadFile = File(...), brand: str = Form(...), 
     meta = await run_in_threadpool(storage_service.upload_file, file.file, file.filename, f"{settings.OSS_DOC_PREFIX}/{brand}", file.content_type or "application/pdf")
 
     # 3. 然后写入 DB — DB 失败时删除已上传的文件
-    doc = Document(filename=meta["filename"], original_name=file.filename, brand=brand, category=category, series=series or None, file_size=meta["file_size"], file_hash=meta["file_hash"], oss_key=meta["oss_key"], description=description)
+    # 会员投稿进入待审核（对 portal 不可见）；管理员保持历史行为直接可见。
+    is_admin = user.role == "admin"
+    doc = Document(filename=meta["filename"], original_name=file.filename, brand=brand, category=category, series=series or None, file_size=meta["file_size"], file_hash=meta["file_hash"], oss_key=meta["oss_key"], description=description,
+                   submitted_by=None if is_admin else user.id,
+                   submission_status="published" if is_admin else "pending")
     try:
         db.add(doc)
         db.commit()
@@ -157,7 +161,7 @@ async def upload_document(file: UploadFile = File(...), brand: str = Form(...), 
         await run_in_threadpool(storage_service.delete_file, meta["oss_key"])
         raise
 
-    return ok(doc.to_dict(), "上传成功")
+    return ok(doc.to_dict(), "上传成功" if is_admin else "投稿成功，等待管理员审核")
 
 
 @router.get("/brands/list")
@@ -169,6 +173,78 @@ async def brands(db: Session = Depends(get_db)):
 async def categories(db: Session = Depends(get_db)):
     values = _valid_values(db, "doc_category")
     return ok(values)
+
+
+# ---------------------------------------------------------------------------
+# Member submissions (个人中心投稿)
+#
+# Members upload documents through the same endpoint as admins, but their
+# entries start as submission_status="pending" and stay invisible on the
+# portal until an admin reviews them. Members may list and delete their own
+# submissions (including published ones) but there is no member edit path.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/my-submissions")
+async def my_document_submissions(db: Session = Depends(get_db), user: User = Depends(require_member)):
+    rows = db.query(Document).filter(Document.submitted_by == user.id).order_by(Document.upload_time.desc()).all()
+    items = [{
+        "id": d.id,
+        "original_name": d.original_name,
+        "brand": d.brand,
+        "category": d.category,
+        "series": d.series,
+        "file_size": d.file_size,
+        "description": d.description,
+        "submission_status": d.submission_status,
+        "rejected_reason": d.rejected_reason,
+        "is_published": d.is_published,
+        "upload_time": iso_utc(d.upload_time),
+    } for d in rows]
+    return ok({"items": items})
+
+
+@router.delete("/my-submissions/{doc_id}")
+async def delete_my_document_submission(doc_id: int, db: Session = Depends(get_db), user: User = Depends(require_member)):
+    # Ownership is enforced by submitted_by — another member's submission 404s.
+    doc = db.query(Document).filter(Document.id == doc_id, Document.submitted_by == user.id).first()
+    if not doc:
+        raise HTTPException(404, "投稿不存在")
+    storage_service.delete_file(doc.oss_key)
+    db.delete(doc)
+    db.commit()
+    return ok(message="删除成功")
+
+
+class ReviewSubmissionBody(BaseModel):
+    action: str  # "publish" | "reject"
+    reason: str | None = None
+
+
+@router.patch("/{doc_id}/review")
+async def review_document_submission(doc_id: int, body: ReviewSubmissionBody, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Admin review of a member submission: publish it, or reject it with a reason."""
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(404, "文档不存在")
+    if body.action == "publish":
+        doc.is_published = True
+        doc.submission_status = "published"
+        doc.rejected_reason = None
+        db.commit()
+        db.refresh(doc)
+        return ok(doc.to_dict(), "已发布")
+    if body.action == "reject":
+        if not (body.reason or "").strip():
+            raise HTTPException(400, "请填写驳回理由")
+        if doc.submission_status == "published" and doc.is_published:
+            raise HTTPException(400, "已发布内容不能驳回，请先取消发布")
+        doc.submission_status = "rejected"
+        doc.rejected_reason = body.reason.strip()
+        db.commit()
+        db.refresh(doc)
+        return ok(doc.to_dict(), "已驳回")
+    raise HTTPException(400, "无效的操作")
 
 
 @router.get("/{doc_id}")
