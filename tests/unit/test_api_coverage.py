@@ -337,10 +337,10 @@ def test_stats_apis(monkeypatch):
 def test_dashboard_page_views_include_unknown_geo_but_exclude_local():
     from sqlalchemy.dialects import postgresql
 
-    from app.api import stats
+    from app.analytics.infrastructure import visit_queries
 
     db = MagicMock()
-    stats._quality_visit_query(db)
+    visit_queries.quality_visit_query(db)
     conditions = db.query.return_value.filter.call_args.args
     rendered = " AND ".join(
         str(condition.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
@@ -763,7 +763,7 @@ def test_update_me_helper():
 def test_visit_tracking_records_client_id_and_event_type(monkeypatch):
     from app.api import visits
 
-    monkeypatch.setattr(visits, "resolve_ip_geo", lambda ip: {"name": "成都", "country_code": "CN"})
+    monkeypatch.setattr("app.analytics.infrastructure.geo.resolve_ip_geo", lambda ip: {"name": "成都", "country_code": "CN"})
     db = MagicMock()
     body = visits.VisitBody(path="/resources", client_id="client-123", event_type="page_view")
     result = asyncio.run(visits.track_visit(body, _Request("8.8.8.8"), db))
