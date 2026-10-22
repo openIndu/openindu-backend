@@ -2,7 +2,11 @@
 
 These tests use FastAPI TestClient with dependency_overrides to verify
 API routing, request validation, response formatting, and error handling.
+The identity context (``app.api.auth.identity``) is patched with fake use
+cases so the HTTP contract is tested in isolation.
 """
+from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -37,13 +41,34 @@ def _make_user(id=1, phone="13800138000", role="user"):
     return user
 
 
-def _make_tokens():
-    return {
-        "access_token": "test-access-token",
-        "refresh_token": "test-refresh-token",
-        "token_type": "bearer",
-        "expires_in": 900,
-    }
+def _make_token_pair():
+    """A concrete TokenPair so the adapter can serialise it with asdict()."""
+    from app.identity.application.sessions import TokenPair
+
+    return TokenPair(
+        access_token="test-access-token",
+        refresh_token="test-refresh-token",
+        token_type="bearer",
+        expires_in=900,
+        access_jti="access-jti",
+        refresh_jti="refresh-jti",
+        access_expires_at=datetime(2026, 1, 1),
+        refresh_expires_at=datetime(2026, 1, 8),
+    )
+
+
+def _fake_context(account=None, outcome=None, is_new_user=False, pair=None):
+    """A patched identity context with configured fake use cases."""
+    from app.domain.auth import BizCode
+
+    pair = pair or _make_token_pair()
+    ctx = MagicMock()
+    ctx.issue_tokens.execute.return_value = pair
+    ctx.authenticate.execute.return_value = SimpleNamespace(
+        account=account, outcome=outcome or BizCode.OK, is_new_user=is_new_user
+    )
+    ctx.refresh.execute.return_value = (account, pair)
+    return ctx
 
 
 def _make_client(app, auth_user=None):
@@ -53,7 +78,7 @@ def _make_client(app, auth_user=None):
     """
     from fastapi.testclient import TestClient
 
-    from app.core.dependencies import get_db, require_auth, require_admin, require_member
+    from app.core.dependencies import get_db, require_admin, require_auth, require_member
 
     # Clear previous overrides for test isolation
     app.dependency_overrides.clear()
@@ -91,21 +116,24 @@ class TestSendCode:
     def test_send_code_success(self):
         """Sending code to a valid phone should return 200."""
         client = _make_client(self.app)
-        with patch("app.api.auth.auth_service.send_code") as mock_send:
+        ctx = _fake_context()
+        with patch("app.api.auth.identity", return_value=ctx):
             response = client.post("/api/v1/auth/send-code", json={"phone": "13800138000"})
             assert response.status_code == 200
             data = response.json()
             assert data["code"] == 200
             assert data["biz_code"] == "AUTH_SMS_SENT"
             assert "验证码" in data["message"]
-            mock_send.assert_called_once()
+            ctx.send_code.execute.assert_called_once_with("13800138000", None)
 
     def test_send_code_invalid_phone(self):
         """Invalid phone format should return 400."""
         from fastapi import HTTPException
 
         client = _make_client(self.app)
-        with patch("app.api.auth.auth_service.send_code", side_effect=HTTPException(status_code=400, detail="手机号格式不正确")):
+        ctx = _fake_context()
+        ctx.send_code.execute.side_effect = HTTPException(status_code=400, detail="手机号格式不正确")
+        with patch("app.api.auth.identity", return_value=ctx):
             response = client.post("/api/v1/auth/send-code", json={"phone": "12345"})
             assert response.status_code == 400
 
@@ -115,15 +143,19 @@ class TestRegisterAndLogin:
 
     @pytest.fixture(autouse=True)
     def setup(self):
+        from app.domain.auth import BizCode
         from app.web_app import app
+
         self.app = app
+        self.biz = BizCode
         self.user = _make_user()
-        self.tokens = _make_tokens()
+        self.tokens = _make_token_pair()
 
     def test_register_success(self):
         """First user registration should succeed."""
         client = _make_client(self.app)
-        with patch("app.api.auth.auth_service.register", return_value={"user": self.user.to_dict(), "tokens": self.tokens}):
+        ctx = _fake_context(account=self.user, outcome=self.biz.AUTH_REGISTER_SUCCESS)
+        with patch("app.api.auth.identity", return_value=ctx):
             response = client.post("/api/v1/auth/register", json={"phone": "13800138001", "code": "888888"})
             assert response.status_code == 200
             data = response.json()
@@ -137,7 +169,9 @@ class TestRegisterAndLogin:
         from app.domain.auth import AuthError, BizCode
 
         client = _make_client(self.app)
-        with patch("app.api.auth.auth_service.register", side_effect=AuthError(BizCode.AUTH_USER_EXISTS)):
+        ctx = _fake_context()
+        ctx.authenticate.execute.side_effect = AuthError(BizCode.AUTH_USER_EXISTS)
+        with patch("app.api.auth.identity", return_value=ctx):
             response = client.post("/api/v1/auth/register", json={"phone": "13800138002", "code": "888888"})
             assert response.status_code == 409
             assert response.json()["biz_code"] == "AUTH_USER_EXISTS"
@@ -145,7 +179,8 @@ class TestRegisterAndLogin:
     def test_login_success(self):
         """Login should succeed."""
         client = _make_client(self.app)
-        with patch("app.api.auth.auth_service.login", return_value={"user": self.user.to_dict(), "tokens": self.tokens}):
+        ctx = _fake_context(account=self.user, outcome=self.biz.AUTH_LOGIN_SUCCESS)
+        with patch("app.api.auth.identity", return_value=ctx):
             response = client.post("/api/v1/auth/login", json={"phone": "13800138003", "code": "888888"})
             assert response.status_code == 200
             assert response.json()["biz_code"] == "AUTH_LOGIN_SUCCESS"
@@ -156,17 +191,17 @@ class TestRegisterAndLogin:
         from app.domain.auth import AuthError, BizCode
 
         client = _make_client(self.app)
-        with patch("app.api.auth.auth_service.login", side_effect=AuthError(BizCode.AUTH_USER_NOT_FOUND)):
+        ctx = _fake_context()
+        ctx.authenticate.execute.side_effect = AuthError(BizCode.AUTH_USER_NOT_FOUND)
+        with patch("app.api.auth.identity", return_value=ctx):
             response = client.post("/api/v1/auth/login", json={"phone": "13900000000", "code": "888888"})
             assert response.status_code == 400
             assert response.json()["biz_code"] == "AUTH_USER_NOT_FOUND"
 
     def test_sign_in_returns_domain_outcome(self):
-        from app.domain.auth import BizCode
-
         client = _make_client(self.app)
-        account = {"user": self.user.to_dict(), "tokens": self.tokens, "is_new_user": True}
-        with patch("app.api.auth.auth_service.sign_in", return_value=(account, BizCode.AUTH_ACCOUNT_CREATED)):
+        ctx = _fake_context(account=self.user, outcome=self.biz.AUTH_ACCOUNT_CREATED, is_new_user=True)
+        with patch("app.api.auth.identity", return_value=ctx):
             response = client.post("/api/v1/auth/sign-in", json={"phone": "13800138000", "code": "888888"})
         assert response.status_code == 200
         assert response.json()["biz_code"] == "AUTH_ACCOUNT_CREATED"
@@ -206,7 +241,8 @@ class TestRegisterAndLogin:
     def test_refresh_token(self):
         """POST /refresh with valid refresh token should return new tokens."""
         client = _make_client(self.app)
-        with patch("app.api.auth.auth_service.refresh_token", return_value={"user": self.user.to_dict(), "tokens": self.tokens}):
+        ctx = _fake_context(account=self.user)
+        with patch("app.api.auth.identity", return_value=ctx):
             response = client.post("/api/v1/auth/refresh", json={"refresh_token": "valid-refresh-token"})
             assert response.status_code == 200
             assert "access_token" in response.json()["data"]["tokens"]
@@ -216,7 +252,9 @@ class TestRegisterAndLogin:
         from fastapi import HTTPException
 
         client = _make_client(self.app)
-        with patch("app.api.auth.auth_service.refresh_token", side_effect=HTTPException(status_code=401, detail="无效 refresh token")):
+        ctx = _fake_context()
+        ctx.refresh.execute.side_effect = HTTPException(status_code=401, detail="无效 refresh token")
+        with patch("app.api.auth.identity", return_value=ctx):
             response = client.post("/api/v1/auth/refresh", json={"refresh_token": "access-token-not-refresh"})
             assert response.status_code == 401
 
@@ -225,9 +263,11 @@ class TestRegisterAndLogin:
         user = _make_user(phone="13800138007")
         client = _make_client(self.app, auth_user=user)
         # Generate a valid JWT token for the middleware to decode
-        from jose import jwt
-        from app.core.config import settings
         import time
+
+        from jose import jwt
+
+        from app.core.config import settings
         payload = {
             "sub": "1",
             "phone": "13800138007",
@@ -241,10 +281,12 @@ class TestRegisterAndLogin:
 
         # conftest.py creates all tables on the shared file-based SQLite database,
         # so the middleware's SessionLocal can access them directly.
-        with patch("app.api.auth.auth_service.logout"):
+        ctx = _fake_context()
+        with patch("app.api.auth.identity", return_value=ctx):
             response = client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {valid_token}"})
             assert response.status_code == 200
             assert response.json()["code"] == 200
+            ctx.logout.execute.assert_called_once()
 
 
 class TestSliderCaptcha:
@@ -258,13 +300,13 @@ class TestSliderCaptcha:
 
     @pytest.fixture(autouse=True)
     def setup(self):
+        from fastapi.testclient import TestClient
+
         from app.core.database import SessionLocal
+        from app.core.dependencies import get_db
         from app.models.slider_challenge import SliderChallenge
         from app.models.sms_code import SmsCode
-
         from app.web_app import app
-        from app.core.dependencies import get_db
-        from fastapi.testclient import TestClient
 
         db = SessionLocal()
         db.query(SliderChallenge).delete()

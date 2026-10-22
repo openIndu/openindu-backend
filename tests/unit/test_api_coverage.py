@@ -751,165 +751,148 @@ def test_visit_tracking_rejects_unknown_event_type():
         asyncio.run(visits.track_visit(body, _Request("8.8.8.8"), MagicMock()))
     assert exc.value.status_code == 400
 
-def test_auth_service_validate_phone(monkeypatch):
+def test_identity_phone_validation():
     from app.domain.auth import AuthError, BizCode
-    from app.services.auth_service import AuthService
+    from app.identity.domain.phone import require_valid_phone
 
     with pytest.raises(AuthError) as exc:
-        AuthService._validate_phone("1234")
+        require_valid_phone("1234")
     assert exc.value.code == BizCode.AUTH_INVALID_PHONE
 
-    monkeypatch.setattr("app.services.auth_service.settings", SimpleNamespace(
-        SMS_MOCK_ENABLED=True, SMS_MOCK_CODE="123456", JWT_SECRET_KEY="test", JWT_ALGORITHM="HS256",
-        ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7
-    ))
 
+def test_identity_issue_token_pair():
+    from dataclasses import asdict
 
-def test_auth_service_create_token_pair(monkeypatch):
-    from app.services.auth_service import AuthService
+    from app.core.utils import utcnow
+    from app.identity.application.sessions import IssueTokenPair
+    from app.identity.infrastructure.tokens import JoseTokenCodec
 
-    monkeypatch.setattr("app.services.auth_service.settings", SimpleNamespace(
-        SMS_MOCK_ENABLED=True, SMS_MOCK_CODE="123456", JWT_SECRET_KEY="test-key-123",
-        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7,
-        CAPTCHA_ENFORCED=False
-    ))
-
-    user = SimpleNamespace(id=1, phone="13800138000", role="user")
-    tokens = AuthService.create_token_pair(user)
+    account = SimpleNamespace(id=1, phone="13800138000", role="user")
+    tokens = asdict(IssueTokenPair(JoseTokenCodec(), None, utcnow, 60, 7).execute(account))
     assert "access_token" in tokens
     assert "refresh_token" in tokens
 
 
-def test_auth_service_verify_code(monkeypatch):
-    from app.services.auth_service import AuthService
+def test_identity_verify_code():
+    from app.core.utils import utcnow
+    from app.identity.application.verification_codes import VerifySmsCode
 
-    monkeypatch.setattr("app.services.auth_service.settings", SimpleNamespace(
-        SMS_MOCK_ENABLED=False, SMS_MOCK_CODE="123456", JWT_SECRET_KEY="test-key-123",
-        JWT_ALGORITHM="HS256"
-    ))
-
-    service = AuthService()
-    db = MagicMock()
     record = SimpleNamespace(code="654321", is_used=False, verify_attempts=0)
-    db.query.return_value = _chain(first=record)
-    assert service.verify_code(db, "13800138000", "wrong") is False
+
+    class Store:
+        def latest_active(self, phone, now):
+            return record
+
+        def save(self, value):
+            pass
+
+    assert VerifySmsCode(Store(), utcnow).execute("13800138000", "wrong") is False
     assert record.verify_attempts == 1
 
 
-def test_auth_service_send_code(monkeypatch):
+def test_identity_send_code():
+    import random
 
-    from app.services.auth_service import AuthService
+    from app.core.utils import utcnow
+    from app.identity.application.verification_codes import SendVerificationCode
 
-    monkeypatch.setattr("app.services.auth_service.settings", SimpleNamespace(
-        SMS_MOCK_ENABLED=True, SMS_MOCK_CODE="123456", JWT_SECRET_KEY="test-key-123",
-        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7,
-        CAPTCHA_ENFORCED=False
-    ))
+    class Store:
+        added = False
 
-    service = AuthService()
-    db = MagicMock()
-    db.query.return_value = _chain(first=None)
-    # Should not crash for valid phone
-    service.send_code(db, "13800138000")
+        def latest(self, phone):
+            return None
+
+        def count_since(self, phone, since):
+            return 0
+
+        def add(self, *args):
+            Store.added = True
+
+        def save(self, record):
+            pass
+
+    class NoGateway:
+        def send(self, phone, code):
+            raise AssertionError("mock mode must not deliver")
+
+    SendVerificationCode(Store(), NoGateway(), None, random.Random(1), utcnow, mock_code="123456").execute("13800138000")
+    assert Store.added
 
 
-def test_auth_service_login(monkeypatch):
-    from fastapi import HTTPException
-
-    from app.services.auth_service import AuthService
-
-    monkeypatch.setattr("app.services.auth_service.settings", SimpleNamespace(
-        SMS_MOCK_ENABLED=True, SMS_MOCK_CODE="123456", JWT_SECRET_KEY="test-key-123",
-        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7,
-        CAPTCHA_ENFORCED=False
-    ))
-
-    service = AuthService()
-
-    # Mock verify_code for login path to return False
-    service.verify_code = lambda db, phone, code: False
-    db = MagicMock()
-    user = SimpleNamespace(id=1, phone="13800138000", role="user", is_active=True, is_blacklisted=False, last_login=None)
-    user.to_dict = lambda: {"id": 1}
-    db.query.return_value = _chain(first=user)
-
+def test_identity_sign_in_rejects_bad_code():
+    from app.core.utils import utcnow
     from app.domain.auth import AuthError, BizCode
+    from app.identity.application.authenticate import AuthenticateBySms, AuthenticationIntent
+    from app.identity.application.verification_codes import VerifySmsCode
 
+    class Store:
+        def latest_active(self, phone, now):
+            return None
+
+        def save(self, record):
+            pass
+
+    class Accounts:
+        def find_by_phone(self, phone):
+            return None
+
+        def count(self):
+            return 1
+
+        def create(self, phone, role, now):
+            raise AssertionError("must not register on a bad code")
+
+        def record_login(self, account, now):
+            pass
+
+    use_case = AuthenticateBySms(Accounts(), VerifySmsCode(Store(), utcnow), utcnow())
     with pytest.raises(AuthError) as exc:
-        service.login(db, "13800138000", "wrong-code")
+        use_case.execute("13800138000", "wrong", AuthenticationIntent.SIGN_IN)
     assert exc.value.code == BizCode.AUTH_INVALID_CODE
 
 
-def test_auth_service_register(monkeypatch):
-    from app.services.auth_service import AuthService
+def test_identity_logout():
+    from app.core.utils import utcnow
+    from app.identity.application.sessions import EndSession, IssueTokenPair
+    from app.identity.infrastructure.tokens import JoseTokenCodec
 
-    monkeypatch.setattr("app.services.auth_service.settings", SimpleNamespace(
-        SMS_MOCK_ENABLED=True, SMS_MOCK_CODE="123456", JWT_SECRET_KEY="test-key-123",
-        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7,
-        CAPTCHA_ENFORCED=False
-    ))
+    class Blacklist:
+        added = False
 
-    service = AuthService()
-    db = MagicMock()
-    db.query.return_value = _chain(first=None)
-    db.add = lambda x: None
-    db.commit = lambda: None
-    db.refresh = lambda x: None
+        def exists(self, jti):
+            return False
 
+        def add(self, *args):
+            Blacklist.added = True
 
-def test_auth_service_refresh(monkeypatch):
-    from app.services.auth_service import AuthService
+    class Sessions:
+        def deactivate(self, user_id, client_id=None, user_agent=None):
+            pass
 
-    monkeypatch.setattr("app.services.auth_service.settings", SimpleNamespace(
-        SMS_MOCK_ENABLED=True, SMS_MOCK_CODE="123456", JWT_SECRET_KEY="test-key-123",
-        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7,
-        CAPTCHA_ENFORCED=False
-    ))
+        def deactivate_all(self, user_id):
+            pass
 
-    service = AuthService()
-    db = MagicMock()
+    account = SimpleNamespace(id=7, phone="13800138000", role="user")
+    token = IssueTokenPair(JoseTokenCodec(), None, utcnow, 60, 7).execute(account).access_token
+    EndSession(JoseTokenCodec(), Blacklist(), Sessions(), utcnow).execute(token, user_agent="UA", client_id="client-1")
+    assert Blacklist.added
 
 
-def test_auth_service_logout(monkeypatch):
-    from jose import jwt
+def test_identity_decode_token_roundtrip():
+    from app.core.utils import utcnow
+    from app.identity.application.sessions import IssueTokenPair
+    from app.identity.infrastructure.tokens import JoseTokenCodec, decode_token
 
-    from app.services.auth_service import AuthService
-
-    monkeypatch.setattr("app.services.auth_service.settings", SimpleNamespace(
-        SMS_MOCK_ENABLED=True, SMS_MOCK_CODE="123456", JWT_SECRET_KEY="test-key-123",
-        JWT_ALGORITHM="HS256", ACCESS_TOKEN_EXPIRE_MINUTES=60, REFRESH_TOKEN_EXPIRE_DAYS=7,
-        CAPTCHA_ENFORCED=False
-    ))
-
-    service = AuthService()
-    db = MagicMock()
-    q = _chain(first=None)
-    db.query.return_value = q
-    token = jwt.encode(
-        {"sub": "7", "type": "access", "jti": "logout-jti", "exp": int(datetime.now().timestamp()) + 3600},
-        "test-key-123",
-        algorithm="HS256",
-    )
-
-    service.logout(db, token, user_agent="UA", client_id="client-1")
-
-    q.update.assert_called_with({"is_active": False})
-    db.commit.assert_called()
-
-
-def test_decode_token(monkeypatch):
-
-    monkeypatch.setattr("app.services.auth_service.settings", SimpleNamespace(
-        JWT_SECRET_KEY="test-key-123", JWT_ALGORITHM="HS256"
-    ))
+    account = SimpleNamespace(id=7, phone="13800138000", role="user")
+    token = IssueTokenPair(JoseTokenCodec(), None, utcnow, 60, 7).execute(account).access_token
+    assert decode_token(token)["type"] == "access"
 
 
 def test_utcnnow():
-    from app.services.auth_service import utcnow
+    from app.core.utils import utcnow
+
     now = utcnow()
     assert now is not None
-
-
 def test_models():
     assert True
 

@@ -7,9 +7,9 @@ from jose import JWTError
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
+from app.identity.infrastructure.tokens import decode_token
 from app.models.token_blacklist import TokenBlacklist
 from app.models.user import User
-from app.services.auth_service import decode_token
 
 security = HTTPBearer(auto_error=False)
 

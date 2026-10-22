@@ -29,3 +29,17 @@ class SqlAccountRepository:
         account.last_login = now
         self.db.commit()
         self.db.refresh(account)
+
+    def find_by_id(self, account_id: int) -> User | None:
+        return self.db.query(User).filter(User.id == account_id).first()
+
+    def update_phone(self, account: User, phone: str) -> User:
+        account.phone = phone
+        self.db.commit()
+        self.db.refresh(account)
+        return account
+
+    def save(self, account: User) -> User:
+        self.db.commit()
+        self.db.refresh(account)
+        return account

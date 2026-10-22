@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db
 from app.core.utils import ok
+from app.identity.infrastructure.tokens import decode_token
 from app.models.visit_event import VisitEvent
-from app.services.auth_service import decode_token
 from app.services.geo_service import resolve_ip_geo
 
 router = APIRouter(prefix="/visits")
