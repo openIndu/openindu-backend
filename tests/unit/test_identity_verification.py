@@ -217,10 +217,9 @@ class TestSliderCaptcha:
             VerifySliderChallenge(challenges, None, utcnow).execute(challenge.id, 200)
 
     def test_ticket_gates_exactly_one_send(self, challenges, db_session):
+        from app.identity.infrastructure.verification_codes import SqlCodeStore
         from app.models.slider_challenge import SliderChallenge
         from app.models.sms_code import SmsCode
-
-        from app.identity.infrastructure.verification_codes import SqlCodeStore
 
         issue = IssueSliderChallenge(challenges, PilChallengeRenderer(), random.Random(7), utcnow)
         verify = VerifySliderChallenge(challenges, None, utcnow)
@@ -251,9 +250,8 @@ class TestSliderCaptcha:
         assert db_session.query(SmsCode).filter(SmsCode.phone == "13800138000").count() == 0
 
     def test_disabled_gate_skips_the_ticket(self, challenges, db_session):
-        from app.models.sms_code import SmsCode
-
         from app.identity.infrastructure.verification_codes import SqlCodeStore
+        from app.models.sms_code import SmsCode
 
         db_session.query(SmsCode).delete()
         db_session.commit()

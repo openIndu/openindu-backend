@@ -1,6 +1,7 @@
-"""Chinese fallback messages and HTTP mapping for authentication outcomes."""
+"""Chinese fallback messages and HTTP mapping for business outcome codes."""
 
 from app.domain.auth import BizCode
+from app.domain.membership import MemberCode
 
 
 class ErrorCode:
@@ -37,6 +38,13 @@ class ErrorCode:
         BizCode.AUTH_ACCOUNT_UNAVAILABLE: "账号不可用",
         BizCode.AUTH_TOKEN_REVOKED: "Token 已被撤销",
         BizCode.AUTH_FORCED_LOGOUT: "Token 已被撤销（强制登出）",
+        MemberCode.ALREADY_MEMBER: "当前账号已是会员或管理员，无需申请",
+        MemberCode.APPLICATION_PENDING: "已有待审核的申请，请耐心等待",
+        MemberCode.APPLICATION_NOT_PENDING: "该申请已处理或不存在",
+        MemberCode.USER_NOT_FOUND: "用户不存在",
+        MemberCode.USER_ALREADY_DELETED: "用户已删除",
+        MemberCode.CANNOT_DELETE_SELF: "不能删除当前登录的管理员账号",
+        MemberCode.INVALID_ROLE: "无效角色",
     }
     _statuses = {
         BizCode.AUTH_INVALID_PHONE: 400,
@@ -59,18 +67,25 @@ class ErrorCode:
         BizCode.AUTH_ACCOUNT_UNAVAILABLE: 401,
         BizCode.AUTH_TOKEN_REVOKED: 401,
         BizCode.AUTH_FORCED_LOGOUT: 401,
+        MemberCode.ALREADY_MEMBER: 400,
+        MemberCode.APPLICATION_PENDING: 400,
+        MemberCode.APPLICATION_NOT_PENDING: 400,
+        MemberCode.USER_NOT_FOUND: 404,
+        MemberCode.USER_ALREADY_DELETED: 409,
+        MemberCode.CANNOT_DELETE_SELF: 400,
+        MemberCode.INVALID_ROLE: 400,
     }
 
     @classmethod
-    def message(cls, code: BizCode, **params: object) -> str:
+    def message(cls, code: BizCode | MemberCode, **params: object) -> str:
         return cls._messages[code].format(**params)
 
     @classmethod
-    def status(cls, code: BizCode) -> int:
+    def status(cls, code: BizCode | MemberCode) -> int:
         return cls._statuses[code]
 
     @classmethod
-    def error_body(cls, code: BizCode, **params: object) -> dict:
+    def error_body(cls, code: BizCode | MemberCode, **params: object) -> dict:
         status = cls.status(code)
         body = {"code": status, "biz_code": code.value, "detail": cls.message(code, **params)}
         if params:
