@@ -157,7 +157,7 @@ async def approve(user_id: int, db: Session = Depends(get_db), admin: User = Dep
     try:
         sms_notified = sms_service.send_member_approved(target.phone)
     except Exception as exc:
-        logger.error("Member-approved SMS failed for user %s (%s): %s", target.id, target.phone, exc)
+        logger.error("Member-approved SMS failed for user %s (%s): %s", target.id, mask_phone(target.phone), exc)
 
     return ok({
         "id": target.id,

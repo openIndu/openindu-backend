@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.dependencies import get_db, require_admin, require_member
+from app.core.dependencies import get_current_user, get_db, require_admin, require_member
 from app.core.utils import iso_utc, ok
 from app.models.document import Document
 from app.models.download_log import DownloadLog
@@ -97,10 +97,11 @@ async def list_documents(
     size: int = Query(20, ge=1, le=100),
     sort_by: str = Query("upload_time", regex="^(file_size|upload_time|download_count|brand)$"),
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    viewer: User | None = Depends(get_current_user),
 ):
     q = db.query(Document)
-    if published_only:
+    if published_only or viewer is None or viewer.role != "admin":
         q = q.filter(Document.is_published == True)  # noqa: E712
     if submission_status:
         q = q.filter(Document.submission_status == submission_status)
@@ -251,9 +252,9 @@ async def review_document_submission(doc_id: int, body: ReviewSubmissionBody, db
 
 
 @router.get("/{doc_id}")
-async def get_document(doc_id: int, db: Session = Depends(get_db)):
+async def get_document(doc_id: int, db: Session = Depends(get_db), viewer: User | None = Depends(get_current_user)):
     doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
+    if not doc or (not doc.is_published and not (viewer and (viewer.role == "admin" or doc.submitted_by == viewer.id))):
         raise HTTPException(404, "文档不存在")
     return ok(doc.to_dict())
 
@@ -261,7 +262,7 @@ async def get_document(doc_id: int, db: Session = Depends(get_db)):
 @router.get("/{doc_id}/download-link")
 async def get_document_download_link(doc_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_member)):
     doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
+    if not doc or (not doc.is_published and current_user.role != "admin" and doc.submitted_by != current_user.id):
         raise HTTPException(status_code=404, detail="文档不存在")
     _check_document_daily_limit(db, current_user)
     doc.download_count = (doc.download_count or 0) + 1
@@ -281,7 +282,7 @@ async def get_document_preview_link(doc_id: int, request: Request, db: Session =
     is counted independently and still capped (preview can't bypass the limit).
     """
     doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
+    if not doc or (not doc.is_published and current_user.role != "admin" and doc.submitted_by != current_user.id):
         raise HTTPException(status_code=404, detail="文档不存在")
     _check_document_preview_daily_limit(db, current_user)
     db.add(DownloadLog(user_id=current_user.id, resource_type="document_preview", resource_id=doc_id, ip_address=client_ip(request)))
