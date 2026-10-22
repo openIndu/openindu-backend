@@ -1,6 +1,7 @@
 """Chinese fallback messages and HTTP mapping for authentication outcomes."""
 
 from app.domain.auth import BizCode
+from app.membership.domain.application import MemberCode
 
 
 class ErrorCode:
@@ -76,3 +77,32 @@ class ErrorCode:
         if params:
             body["params"] = params
         return body
+
+
+class MemberMessages:
+    """HTTP fallback catalog for membership outcomes."""
+
+    _messages = {
+        MemberCode.ALREADY_MEMBER: "当前账号已是会员或管理员，无需申请",
+        MemberCode.APPLICATION_PENDING: "已有待审核的申请，请耐心等待",
+        MemberCode.USER_NOT_FOUND: "用户不存在",
+        MemberCode.APPLICATION_NOT_PENDING: "该申请已处理或不存在",
+        MemberCode.APPLICATION_SUBMITTED: "申请已提交，等待审核",
+        MemberCode.APPLICATION_REJECTED: "已驳回",
+        MemberCode.APPROVED_NOTIFIED: "已通过，用户已升级为会员，短信通知已发送",
+        MemberCode.APPROVED_UNNOTIFIED: "已通过，用户已升级为会员，短信通知未发出（详见服务日志）",
+    }
+    _statuses = {
+        MemberCode.ALREADY_MEMBER: 400,
+        MemberCode.APPLICATION_PENDING: 400,
+        MemberCode.USER_NOT_FOUND: 404,
+        MemberCode.APPLICATION_NOT_PENDING: 400,
+    }
+
+    @classmethod
+    def message(cls, code: MemberCode) -> str:
+        return cls._messages[code]
+
+    @classmethod
+    def status(cls, code: MemberCode) -> int:
+        return cls._statuses[code]

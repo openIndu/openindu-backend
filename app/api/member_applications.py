@@ -1,5 +1,4 @@
 """Member application API — user applies, admin approves."""
-import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -7,12 +6,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db, require_admin, require_auth
+from app.core.err_code import MemberMessages
 from app.core.utils import iso_utc, mask_phone, ok
-from app.models.admin_audit_log import AdminAuditLog
+from app.membership.application.commands import MembershipCommands
+from app.membership.domain.application import MemberCode, MemberError
+from app.membership.infrastructure.accounts import SqlMembershipRepository
 from app.models.user import User
 from app.services.sms_service import sms_service
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -21,34 +21,31 @@ class ApplyBody(BaseModel):
     note: str | None = None
 
 
-def _audit(db: Session, admin_id: int, target_user_id: int, action: str, detail: dict | None = None):
-    db.add(AdminAuditLog(admin_id=admin_id, target_user_id=target_user_id, action=action, detail=detail or {}))
-
-
 def _utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _commands(db: Session) -> MembershipCommands:
+    return MembershipCommands(SqlMembershipRepository(db), sms_service.send_member_approved, _utcnow())
+
+
+def _error(exc: MemberError) -> HTTPException:
+    return HTTPException(MemberMessages.status(exc.code), MemberMessages.message(exc.code))
 
 
 # ── 用户侧 ────────────────────────────────────────────────────────────────────
 
 @router.post("/member-applications")
 async def apply(body: ApplyBody, db: Session = Depends(get_db), user: User = Depends(require_auth)):
-    if user.role in ("member", "admin"):
-        raise HTTPException(400, "当前账号已是会员或管理员，无需申请")
-    if user.member_apply_status == "pending":
-        raise HTTPException(400, "已有待审核的申请，请耐心等待")
-    # rejected 状态允许重新申请（下方逻辑会覆盖为 pending）
-    user.member_apply_status = "pending"
-    user.member_apply_note = body.note
-    user.member_apply_at = _utcnow()
-    user.member_reviewed_by = None
-    db.commit()
-    db.refresh(user)
+    try:
+        _commands(db).apply(user, body.note)
+    except MemberError as exc:
+        raise _error(exc) from exc
     return ok({
         "id": user.id,
         "status": user.member_apply_status,
         "created_at": iso_utc(user.member_apply_at),
-    }, "申请已提交，等待审核")
+    }, MemberMessages.message(MemberCode.APPLICATION_SUBMITTED))
 
 
 @router.get("/member-applications/mine")
@@ -112,17 +109,10 @@ async def list_applications(
 
 @router.put("/admin/member-applications/{user_id}/reject")
 async def reject(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    target = db.query(User).filter(User.id == user_id).first()
-    if not target:
-        raise HTTPException(404, "用户不存在")
-    if target.member_apply_status != "pending":
-        raise HTTPException(400, "该申请已处理或不存在")
-
-    target.member_apply_status = "rejected"
-    target.member_reviewed_by = admin.id
-    _audit(db, admin.id, target.id, "member_reject", {"user_id": user_id})
-    db.commit()
-    db.refresh(target)
+    try:
+        target = _commands(db).reject(user_id, admin.id)
+    except MemberError as exc:
+        raise _error(exc) from exc
     return ok({
         "id": target.id,
         "user_id": target.id,
@@ -133,31 +123,15 @@ async def reject(user_id: int, db: Session = Depends(get_db), admin: User = Depe
         "phone": mask_phone(target.phone),
         "nickname": target.nickname,
         "current_role": target.role,
-    }, "已驳回")
+    }, MemberMessages.message(MemberCode.APPLICATION_REJECTED))
 
 
 @router.put("/admin/member-applications/{user_id}/approve")
 async def approve(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    target = db.query(User).filter(User.id == user_id).first()
-    if not target:
-        raise HTTPException(404, "用户不存在")
-    if target.member_apply_status != "pending":
-        raise HTTPException(400, "该申请已处理或不存在")
-
-    target.role = "member"
-    target.member_apply_status = "approved"
-    target.member_reviewed_by = admin.id
-    _audit(db, admin.id, target.id, "member_approve", {"user_id": user_id})
-    db.commit()
-    db.refresh(target)
-
-    # Notify the applicant by SMS. The approval is already committed — a
-    # failed notice must never roll it back, only surface in the response.
-    sms_notified = False
     try:
-        sms_notified = sms_service.send_member_approved(target.phone)
-    except Exception as exc:
-        logger.error("Member-approved SMS failed for user %s (%s): %s", target.id, mask_phone(target.phone), exc)
+        target, outcome = _commands(db).approve(user_id, admin.id)
+    except MemberError as exc:
+        raise _error(exc) from exc
 
     return ok({
         "id": target.id,
@@ -169,5 +143,5 @@ async def approve(user_id: int, db: Session = Depends(get_db), admin: User = Dep
         "phone": mask_phone(target.phone),
         "nickname": target.nickname,
         "current_role": target.role,
-        "sms_notified": sms_notified,
-    }, "已通过，用户已升级为会员" + ("，短信通知已发送" if sms_notified else "，短信通知未发出（详见服务日志）"))
+        "sms_notified": outcome is MemberCode.APPROVED_NOTIFIED,
+    }, MemberMessages.message(outcome))
