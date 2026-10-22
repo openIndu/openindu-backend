@@ -63,6 +63,7 @@ async def list_software(
     category: str | None = None,
     keyword: str | None = None,
     published_only: bool = False,
+    submission_status: str | None = Query(None, regex="^(pending|published|rejected)$"),
     expand_versions: bool = False,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
@@ -79,6 +80,8 @@ async def list_software(
         )
         if published_only:
             vq = vq.filter(SoftwareVersion.is_published == True)  # noqa: E712
+        if submission_status:
+            vq = vq.filter(Software.submission_status == submission_status)
         if brand: vq = vq.filter(Software.brand == brand)
         if category: vq = vq.filter(Software.category == category)
         if keyword:
@@ -144,6 +147,8 @@ async def list_software(
         from app.models.software import SoftwareVersion
         published_ids = db.query(SoftwareVersion.software_id).filter(SoftwareVersion.is_published == True).distinct()  # noqa: E712
         q = q.filter(Software.id.in_(published_ids))
+    if submission_status:
+        q = q.filter(Software.submission_status == submission_status)
     if brand: q = q.filter(Software.brand == brand)
     if category: q = q.filter(Software.category == category)
     if keyword: q = q.filter(Software.original_name.ilike(f"%{keyword}%"))

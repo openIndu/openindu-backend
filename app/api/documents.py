@@ -92,6 +92,7 @@ async def list_documents(
     series: str | None = None,
     keyword: str | None = None,
     published_only: bool = False,
+    submission_status: str | None = Query(None, regex="^(pending|published|rejected)$"),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     sort_by: str = Query("upload_time", regex="^(file_size|upload_time|download_count|brand)$"),
@@ -101,6 +102,8 @@ async def list_documents(
     q = db.query(Document)
     if published_only:
         q = q.filter(Document.is_published == True)  # noqa: E712
+    if submission_status:
+        q = q.filter(Document.submission_status == submission_status)
     if brand:
         q = q.filter(Document.brand == brand)
     if category:
