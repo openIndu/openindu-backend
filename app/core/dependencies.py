@@ -7,6 +7,7 @@ from jose import JWTError
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
+from app.domain.auth import AuthError
 from app.identity.infrastructure.tokens import decode_token
 from app.models.token_blacklist import TokenBlacklist
 from app.models.user import User
@@ -30,7 +31,7 @@ async def get_current_user(
         return None
     try:
         payload = decode_token(credentials.credentials)
-    except JWTError:
+    except (AuthError, JWTError):
         return None
     if payload.get("type") != "access":
         return None
