@@ -15,7 +15,7 @@ apscheduler==3.11.2
 httpx==0.27.1
 py-ip2region==3.0.4
 slowapi==0.1.9
-mcp==1.28.1
+mcp==1.30.0
 python-dotenv==1.2.2
 alibabacloud-dysmsapi20170525==2.0.24
 aiofiles==24.1.0
