@@ -7,11 +7,11 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db, require_admin
 from app.core.err_code import MemberMessages
-from app.core.utils import _is_private, ok
+from app.core.utils import ok
 from app.membership.application.commands import MembershipCommands
+from app.membership.application.queries import ListUsers, UserListCriteria
 from app.membership.domain.application import MemberError
 from app.membership.infrastructure.accounts import SqlMembershipRepository
-from app.models.login_session import LoginSession
 from app.models.user import User
 
 router = APIRouter(prefix="/users")
@@ -30,47 +30,8 @@ def _error(exc: MemberError) -> HTTPException:
 
 
 def _enrich_user_dict(db: Session, user_dict: dict, user_id: int) -> dict:
-    """Add online status and last public login IP/location to user dict.
-
-    The session picked is the last session whose ``ip_address`` is a real
-    (public) address — private / loopback / docker-bridge IPs are skipped so the
-    admin UI doesn't display dev-stack noise (e.g. a login from ``localhost``
-    stamping the docker default-gateway IP ``172.19.0.1`` onto the row).
-    """
-    active_session = db.query(LoginSession).filter(
-        LoginSession.user_id == user_id,
-        LoginSession.is_active.is_(True),
-    ).first()
-    user_dict["online"] = active_session is not None
-
-    # Walk most-recent sessions and pick the first non-private IP. Fall back to
-    # whatever the latest session has (even private) if every session is local,
-    # so the column isn't blank for genuinely-local-only test accounts.
-    last_session = db.query(LoginSession).filter(
-        LoginSession.user_id == user_id,
-    ).order_by(LoginSession.last_active_at.desc()).first()
-    fallback_ip = last_session.ip_address if last_session else None
-    fallback_location = getattr(last_session, "geo_location", None) if last_session else None
-
-    recent_sessions = db.query(LoginSession).filter(
-        LoginSession.user_id == user_id,
-    ).order_by(LoginSession.last_active_at.desc()).limit(20).all()
-    # Unit tests use MagicMock query chains; keep the helper robust when .all()
-    # is not configured to return a real list.
-    if not isinstance(recent_sessions, list):
-        recent_sessions = []
-    chosen_ip = None
-    chosen_location = None
-    for s in recent_sessions:
-        ip = getattr(s, "ip_address", None)
-        if ip and not _is_private(ip):
-            chosen_ip = ip
-            chosen_location = getattr(s, "geo_location", None)
-            break
-    user_dict["login_ip"] = chosen_ip or fallback_ip
-    user_dict["login_location"] = chosen_location or fallback_location
-
-    return user_dict
+    """Compatibility adapter retained for existing internal callers."""
+    return SqlMembershipRepository(db)._enrich_user(user_dict, user_id)
 
 
 @router.get("")
@@ -85,30 +46,8 @@ async def list_users(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    # Soft-deleted users (deleted_at IS NOT NULL) are hidden by default.
-    q = db.query(User).filter(User.deleted_at.is_(None))
-    if keyword:
-        q = q.filter(User.phone.ilike(f"%{keyword}%"))
-    if role:
-        q = q.filter(User.role == role)
-    if apply_status == "none":
-        q = q.filter(User.member_apply_status.is_(None))
-    elif apply_status:
-        q = q.filter(User.member_apply_status == apply_status)
-
-    # Apply sorting
-    sort_column = {
-        "created_at": User.created_at,
-        "last_login": User.last_login,
-    }[sort_by]
-    if sort_order == "asc":
-        q = q.order_by(sort_column.asc())
-    else:
-        q = q.order_by(sort_column.desc())
-
-    total = q.count()
-    items = [_enrich_user_dict(db, u.to_dict(), u.id) for u in q.offset((page - 1) * size).limit(size).all()]
-    return ok({"items": items, "total": total, "page": page, "size": size})
+    criteria = UserListCriteria(page, size, keyword, role, apply_status, sort_by, sort_order)
+    return ok(ListUsers(SqlMembershipRepository(db)).execute(criteria))
 
 
 @router.put("/{user_id}/role")
