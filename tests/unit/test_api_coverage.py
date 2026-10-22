@@ -43,27 +43,29 @@ def test_brand_mapping_helpers():
 
 def test_documents_helpers_and_edges(monkeypatch):
     from app.api import documents
+    from app.services.storage_service import storage_service
 
     assert documents.ok()["data"] == {}
-    assert documents.client_ip(_Request("1.1.1.1, 2.2.2.2")) == "1.1.1.1"
-    assert documents.client_ip(_Request()) == "127.0.0.1"
+    assert documents._client_ip(_Request("1.1.1.1, 2.2.2.2")) == "1.1.1.1"
+    assert documents._client_ip(_Request()) == "127.0.0.1"
 
     db = MagicMock()
-    doc = SimpleNamespace(id=1, oss_key="docs/a.pdf", original_name="a.pdf", download_count=None, is_published=True)
+    doc = SimpleNamespace(id=1, oss_key="docs/a.pdf", original_name="a.pdf", download_count=None, is_published=True, submitted_by=None)
     db.query.side_effect = [_chain(first=doc), _chain(count=0)]
-    monkeypatch.setattr(documents.storage_service, "get_download_url", lambda key: {"url": f"/files/{key}", "expires_in": None})
+    monkeypatch.setattr(storage_service, "get_download_url", lambda key: {"url": f"/files/{key}", "expires_in": None})
     result = asyncio.run(documents.get_document_download_link(1, _Request(), db, _user("member")))
     assert result["data"]["download_url"] == "/files/docs/a.pdf"
     assert doc.download_count == 1
 
     db = MagicMock()
     db.query.return_value = _chain(first=doc)
-    monkeypatch.setattr(documents.storage_service, "delete_file", lambda key: None)
+    monkeypatch.setattr(storage_service, "delete_file", lambda key: None)
     assert asyncio.run(documents.delete_document(1, db, _user()))["message"] == "删除成功"
 
 
 def test_documents_list_upload_get(monkeypatch):
     from app.api import documents
+    from app.services.storage_service import storage_service
 
     db = MagicMock()
     doc = SimpleNamespace(id=1, oss_key="docs/a.pdf", original_name="a.pdf", is_published=True)
@@ -77,7 +79,8 @@ def test_documents_list_upload_get(monkeypatch):
         _chain(items=[SimpleNamespace(value="siemens")]),
         _chain(items=[SimpleNamespace(value="plc-manual")]),
     ]
-    monkeypatch.setattr(documents.storage_service, "upload_file", lambda c, n, p, t: {"oss_key": "docs/x.pdf", "filename": "x.pdf", "file_size": 100, "file_hash": "abc"})
+    db.refresh = lambda entry: None
+    monkeypatch.setattr(storage_service, "upload_file", lambda c, n, p, t: {"oss_key": "docs/x.pdf", "filename": "x.pdf", "file_size": 100, "file_hash": "abc"})
     file = MagicMock()
     file.filename = "test.pdf"
     file.size = 100
@@ -108,35 +111,39 @@ def test_documents_brands_categories():
 
 
 def test_document_series_validation():
-    from app.api import documents
+    from app.catalog.domain.rules import require_valid_series
+    from app.core.err_code import ErrorCode
+    from app.domain.catalog import CatalogCode, CatalogError
 
-    db = MagicMock()
-    db.query.return_value = _chain(first=SimpleNamespace(value="s7-1200"))
-    documents._validate_doc_series(db, "siemens", "plc-manual", "s7-1200")
-
-    db = MagicMock()
-    db.query.return_value = _chain(first=None)
-    with pytest.raises(HTTPException) as exc:
-        documents._validate_doc_series(db, "siemens", "plc-manual", "bad-series")
-    assert exc.value.status_code == 400
-    assert exc.value.detail == "无效系列"
+    require_valid_series("s7-1200", True)
+    require_valid_series(None, False)
+    with pytest.raises(CatalogError) as exc:
+        require_valid_series("bad-series", False)
+    assert exc.value.code == CatalogCode.INVALID_SERIES
+    assert ErrorCode.status(exc.value.code) == 400
+    assert ErrorCode.message(exc.value.code) == "无效系列"
 
 
 def test_series_tags_require_brand_and_global_unique_value():
     from app.api import tags
+    from app.core.err_code import ErrorCode
+    from app.domain.catalog import CatalogCode, CatalogError
 
     db = MagicMock()
     body = tags.CreateTagBody(type="doc_series", value="s7-1200", label_zh="S7-1200", parent_value="plc-manual")
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(CatalogError) as exc:
         asyncio.run(tags.create_tag(body, db, _user()))
-    assert exc.value.status_code == 400
+    assert exc.value.code == CatalogCode.TAG_SERIES_PARENT_REQUIRED
+    assert ErrorCode.status(exc.value.code) == 400
 
     db = MagicMock()
     db.query.return_value = _chain(first=SimpleNamespace(value="s7-1200"))
     body = tags.CreateTagBody(type="doc_series", value="s7-1200", label_zh="S7-1200", parent_value="hardware-manual", brand_value="siemens")
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(CatalogError) as exc:
         asyncio.run(tags.create_tag(body, db, _user()))
-    assert exc.value.status_code == 409
+    assert exc.value.code == CatalogCode.TAG_ALREADY_EXISTS
+    assert ErrorCode.status(exc.value.code) == 409
+    assert exc.value.params == {"tag_type": "doc_series", "value": "s7-1200"}
 
 
 def test_software_responses_do_not_expose_legacy_series():
@@ -179,6 +186,8 @@ def test_software_responses_do_not_expose_legacy_series():
 
 def test_sw_series_tag_type_is_rejected():
     from app.api import tags
+    from app.core.err_code import ErrorCode
+    from app.domain.catalog import CatalogCode, CatalogError
 
     db = MagicMock()
     with pytest.raises(HTTPException) as exc:
@@ -186,9 +195,10 @@ def test_sw_series_tag_type_is_rejected():
     assert exc.value.status_code == 400
 
     body = tags.CreateTagBody(type="sw_series", value="obsolete", label_zh="Obsolete")
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(CatalogError) as exc:
         asyncio.run(tags.create_tag(body, db, _user()))
-    assert exc.value.status_code == 400
+    assert exc.value.code == CatalogCode.TAG_TYPE_INVALID
+    assert ErrorCode.status(exc.value.code) == 400
 
 
 @pytest.mark.parametrize("filename,expected", [("setup.exe", ".exe"), ("archive", "")])

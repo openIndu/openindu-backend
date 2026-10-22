@@ -8,7 +8,7 @@ decisions out of HTTP handlers does not complete a migration.
 | --- | --- | --- | --- |
 | Identity | account registration, SMS authentication, session lifecycle | `api/auth.py`, `services/auth_service.py` | migrated: SMS auth, CAPTCHA, verification codes, token/session lifecycle; `services/auth_service.py` removed |
 | Membership | applications, review, role transition and notification | `api/member_applications.py`, `api/users.py` | migrated: apply/review rules, approval SMS notification, account administration (role change, blacklist, force logout, soft delete); both API files are thin adapters |
-| Catalog | software, documents, tags, publication and downloads | `api/software.py`, `api/documents.py`, `api/tags.py` | in progress: software submissions, direct-to-OSS pipeline, downloads and publishing migrated (`app/catalog/`); documents and tags still legacy |
+| Catalog | software, documents, tags, publication and downloads | `api/software.py`, `api/documents.py`, `api/tags.py` | done: software submissions, direct-to-OSS pipeline, downloads, publishing, documents and tags migrated (`app/catalog/`) |
 | Analytics | visits and statistics | `api/visits.py`, `api/stats.py`, `services/geo_service.py` | legacy |
 | Knowledge | chat, retrieval and MCP tools | `api/chat.py`, `api/chat_sessions.py`, `mcp/` | legacy |
 
@@ -32,7 +32,7 @@ for every migrated context.
 
 Migration order: Identity (done; `services/auth_service.py` removed),
 Membership (done; approval SMS and audit stay transactional as before),
-Catalog (in progress: software done, then documents and tags), then
+Catalog (done: software, then documents and tags), then
 Analytics and Knowledge. Keep existing routes and database schema
 stable during each move, and add behavior tests for the use case before
 replacing its route implementation. The compatibility adapters are removed
