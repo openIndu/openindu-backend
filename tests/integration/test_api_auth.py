@@ -260,6 +260,7 @@ class TestSliderCaptcha:
     def setup(self):
         from app.core.database import SessionLocal
         from app.models.slider_challenge import SliderChallenge
+        from app.models.sms_code import SmsCode
 
         from app.web_app import app
         from app.core.dependencies import get_db
@@ -267,6 +268,7 @@ class TestSliderCaptcha:
 
         db = SessionLocal()
         db.query(SliderChallenge).delete()
+        db.query(SmsCode).filter(SmsCode.phone == "13800138000").delete()
         db.commit()
 
         def _real_db():
@@ -283,6 +285,7 @@ class TestSliderCaptcha:
         yield
         app.dependency_overrides.clear()
         db.query(SliderChallenge).delete()
+        db.query(SmsCode).filter(SmsCode.phone == "13800138000").delete()
         db.commit()
         db.close()
 
