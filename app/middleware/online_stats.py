@@ -8,6 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.analytics.infrastructure.geo import resolve_ip_geo
 from app.core.database import SessionLocal
+from app.domain.auth import AuthError
 from app.identity.infrastructure.tokens import decode_token
 from app.models.login_session import LoginSession
 
@@ -82,6 +83,6 @@ class OnlineStatsMiddleware(BaseHTTPMiddleware):
                         db.rollback()
                     finally:
                         db.close()
-            except (JWTError, ValueError, HTTPException):
+            except (AuthError, JWTError, ValueError, HTTPException):
                 pass
         return await call_next(request)

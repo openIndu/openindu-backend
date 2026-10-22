@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.analytics.provider import analytics
 from app.core.dependencies import get_db
 from app.core.utils import ok
+from app.domain.auth import AuthError
 from app.identity.infrastructure.tokens import decode_token
 
 router = APIRouter(prefix="/visits")
@@ -31,7 +32,7 @@ def _bearer_user_id(request: Request) -> int | None:
         payload = decode_token(auth.split(" ", 1)[1])
         if payload.get("type") == "access" and payload.get("sub"):
             return int(payload["sub"])
-    except (HTTPException, JWTError, ValueError):
+    except (AuthError, HTTPException, JWTError, ValueError):
         pass
     return None
 
