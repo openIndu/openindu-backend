@@ -3,7 +3,7 @@
 from sqlalchemy.orm import Session
 
 from app.core.utils import _is_private, mask_phone
-from app.membership.application.queries import UserListCriteria
+from app.membership.application.queries import ApplicationListCriteria, UserListCriteria
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.login_session import LoginSession
 from app.models.user import User
@@ -54,6 +54,26 @@ class SqlMembershipRepository:
         accounts = query.offset((criteria.page - 1) * criteria.size).limit(criteria.size).all()
         items = [self._enrich_user(account.to_dict(), account.id) for account in accounts]
         return {"items": items, "total": total, "page": criteria.page, "size": criteria.size}
+
+    def list_applications(self, criteria: ApplicationListCriteria) -> dict:
+        query = self.db.query(User).filter(
+            User.member_apply_status.isnot(None), User.deleted_at.is_(None)
+        )
+        if criteria.status:
+            query = query.filter(User.member_apply_status == criteria.status)
+
+        sort_column = User.member_apply_at
+        query = query.order_by(
+            sort_column.asc() if criteria.sort_order == "asc" else sort_column.desc()
+        )
+        total = query.count()
+        accounts = query.offset((criteria.page - 1) * criteria.size).limit(criteria.size).all()
+        return {
+            "items": accounts,
+            "total": total,
+            "page": criteria.page,
+            "size": criteria.size,
+        }
 
     def _enrich_user(self, user_dict: dict, user_id: int) -> dict:
         """Add active status and the most recent public IP/location to a user view."""

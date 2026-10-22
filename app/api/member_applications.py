@@ -9,6 +9,7 @@ from app.core.dependencies import get_db, require_admin, require_auth
 from app.core.err_code import MemberMessages
 from app.core.utils import iso_utc, mask_phone, ok
 from app.membership.application.commands import MembershipCommands
+from app.membership.application.queries import ApplicationListCriteria, ListMemberApplications
 from app.membership.domain.application import MemberCode, MemberError
 from app.membership.infrastructure.accounts import SqlMembershipRepository
 from app.models.user import User
@@ -71,24 +72,9 @@ async def list_applications(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    q = (
-        db.query(User)
-        .filter(User.member_apply_status.isnot(None), User.deleted_at.is_(None))
+    query_result = ListMemberApplications(SqlMembershipRepository(db)).execute(
+        ApplicationListCriteria(page, size, status, sort_order)
     )
-    if status:
-        q = q.filter(User.member_apply_status == status)
-
-    # Apply sorting
-    sort_column = {
-        "created_at": User.member_apply_at,
-    }[sort_by]
-    if sort_order == "asc":
-        q = q.order_by(sort_column.asc())
-    else:
-        q = q.order_by(sort_column.desc())
-
-    total = q.count()
-    items = q.offset((page - 1) * size).limit(size).all()
 
     result = [
         {
@@ -102,9 +88,14 @@ async def list_applications(
             "nickname": u.nickname,
             "current_role": u.role,
         }
-        for u in items
+        for u in query_result["items"]
     ]
-    return ok({"items": result, "total": total, "page": page, "size": size})
+    return ok({
+        "items": result,
+        "total": query_result["total"],
+        "page": query_result["page"],
+        "size": query_result["size"],
+    })
 
 
 @router.put("/admin/member-applications/{user_id}/reject")
