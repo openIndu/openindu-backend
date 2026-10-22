@@ -154,7 +154,7 @@ async def list_software(
 
 
 @router.post("/upload")
-async def upload_software(file: UploadFile = File(...), brand: str = Form(...), category: str = Form(...), version: str = Form(...), description: str = Form(""), db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+async def upload_software(file: UploadFile = File(...), brand: str = Form(...), category: str = Form(...), version: str = Form(...), description: str = Form(""), db: Session = Depends(get_db), user: User = Depends(require_member)):
     # 1. 所有前置校验 — 失败时不产生副作用
     brands = _valid_values(db, "sw_brand")
     categories = _valid_values(db, "sw_category")
@@ -167,7 +167,11 @@ async def upload_software(file: UploadFile = File(...), brand: str = Form(...), 
     meta = await run_in_threadpool(storage_service.upload_file, file.file, file.filename, f"{settings.OSS_SOFTWARE_PREFIX}/{brand}", file.content_type or "application/octet-stream")
 
     # 3. 然后写入 DB（两条记录）— DB 失败时删除已上传的文件
-    sw = Software(filename=meta["filename"], original_name=file.filename, brand=brand, category=category, latest_version=version, description=description)
+    # 会员投稿进入待审核（对 portal 不可见）；管理员保持历史行为直接可见。
+    is_admin = user.role == "admin"
+    sw = Software(filename=meta["filename"], original_name=file.filename, brand=brand, category=category, latest_version=version, description=description,
+                  submitted_by=None if is_admin else user.id,
+                  submission_status="published" if is_admin else "pending")
     try:
         db.add(sw)
         db.flush()
@@ -179,7 +183,7 @@ async def upload_software(file: UploadFile = File(...), brand: str = Form(...), 
         await run_in_threadpool(storage_service.delete_file, meta["oss_key"])
         raise
 
-    return ok(sw.to_dict(include_versions=True), "上传成功")
+    return ok(sw.to_dict(include_versions=True), "上传成功" if is_admin else "投稿成功，等待管理员审核")
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +232,10 @@ def _decode_upload_token(token: str) -> dict:
 
 
 @router.post("/upload/init")
-async def upload_init(body: UploadInitBody, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+async def upload_init(body: UploadInitBody, db: Session = Depends(get_db), user: User = Depends(require_member)):
+    # 会员只能新建投稿，不能往别人（或自己）已有的软件条目里追加版本。
+    if body.software_id and user.role != "admin":
+        raise HTTPException(403, "会员投稿请新建软件条目，不能为已有软件添加版本")
     # 1. 校验 — 失败时不产生任何 OSS 副作用
     if body.software_id:
         existing_sw = db.query(Software).filter(Software.id == body.software_id).first()
@@ -265,6 +272,10 @@ async def upload_init(body: UploadInitBody, db: Session = Depends(get_db), admin
         "content_type": body.content_type,
         "size": body.size,
         "software_id": body.software_id,
+        # Submission metadata rides in the signed token so /upload/complete can
+        # stamp the entry without trusting any client-sent field there.
+        "is_admin": user.role == "admin",
+        "submitted_by": None if user.role == "admin" else user.id,
         "exp": datetime.now(UTC) + timedelta(hours=UPLOAD_TOKEN_EXPIRE_HOURS),
     }
 
@@ -296,10 +307,12 @@ async def upload_init(body: UploadInitBody, db: Session = Depends(get_db), admin
 
 
 @router.post("/upload/complete")
-async def upload_complete(body: UploadCompleteBody, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+async def upload_complete(body: UploadCompleteBody, db: Session = Depends(get_db), user: User = Depends(require_member)):
     claims = _decode_upload_token(body.token)
     mode = claims.get("mode")
     oss_key = claims["oss_key"]
+    is_admin = bool(claims.get("is_admin"))
+    submitted_by = claims.get("submitted_by")
 
     if mode == "multipart":
         upload_id = claims["upload_id"]
@@ -321,6 +334,9 @@ async def upload_complete(body: UploadCompleteBody, db: Session = Depends(get_db
     # 写入 DB — 失败时清理已上传的文件
     existing_id = claims.get("software_id")
     if existing_id:
+        if not is_admin:
+            await run_in_threadpool(storage_service.delete_file, oss_key)
+            raise HTTPException(403, "会员投稿请新建软件条目，不能为已有软件添加版本")
         sw = db.query(Software).filter(Software.id == existing_id).first()
         if not sw:
             await run_in_threadpool(storage_service.delete_file, oss_key)
@@ -344,7 +360,9 @@ async def upload_complete(body: UploadCompleteBody, db: Session = Depends(get_db
 
     sw = Software(filename=oss_key.rsplit("/", 1)[-1], original_name=claims["filename"],
                   brand=claims["brand"], category=claims["category"],
-                  latest_version=claims["version"], description=claims.get("description"))
+                  latest_version=claims["version"], description=claims.get("description"),
+                  submitted_by=submitted_by,
+                  submission_status="published" if is_admin else "pending")
     # Check for duplicate OSS key before insert
     existing_ver = db.query(SoftwareVersion).filter(SoftwareVersion.oss_key == oss_key).first()
     if existing_ver:
@@ -362,11 +380,11 @@ async def upload_complete(body: UploadCompleteBody, db: Session = Depends(get_db
         await run_in_threadpool(storage_service.delete_file, oss_key)
         raise
 
-    return ok(sw.to_dict(include_versions=True), "上传成功")
+    return ok(sw.to_dict(include_versions=True), "上传成功" if is_admin else "投稿成功，等待管理员审核")
 
 
 @router.post("/upload/abort")
-async def upload_abort(body: UploadAbortBody, admin: User = Depends(require_admin)):
+async def upload_abort(body: UploadAbortBody, user: User = Depends(require_member)):
     claims = _decode_upload_token(body.token)
     mode = claims.get("mode")
     oss_key = claims["oss_key"]
@@ -375,6 +393,85 @@ async def upload_abort(body: UploadAbortBody, admin: User = Depends(require_admi
     elif mode == "single":
         await run_in_threadpool(storage_service.delete_file, oss_key)
     return ok(message="已取消")
+
+
+# ---------------------------------------------------------------------------
+# Member submissions (个人中心投稿)
+#
+# Members upload through the same pipeline as admins, but their entries start
+# as submission_status="pending" and stay invisible on the portal until an
+# admin reviews them. Members may list and delete their own submissions
+# (including published ones) but there is deliberately no member edit path.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/my-submissions")
+async def my_software_submissions(db: Session = Depends(get_db), user: User = Depends(require_member)):
+    rows = db.query(Software).filter(Software.submitted_by == user.id, Software.is_active.is_(True)).order_by(Software.created_at.desc()).all()
+    items = []
+    for s in rows:
+        size = None
+        if s.latest_version:
+            for v in s.versions:
+                if v.version == s.latest_version:
+                    size = v.file_size
+                    break
+        items.append({
+            "id": s.id,
+            "original_name": s.original_name,
+            "brand": s.brand,
+            "category": s.category,
+            "version": s.latest_version,
+            "file_size": size,
+            "description": s.description,
+            "submission_status": s.submission_status,
+            "rejected_reason": s.rejected_reason,
+            "is_published": s.is_published,
+            "created_at": iso_utc(s.created_at),
+        })
+    return ok({"items": items})
+
+
+@router.delete("/my-submissions/{software_id}")
+async def delete_my_software_submission(software_id: int, db: Session = Depends(get_db), user: User = Depends(require_member)):
+    # Ownership is enforced by submitted_by — another member's submission 404s.
+    sw = db.query(Software).filter(Software.id == software_id, Software.submitted_by == user.id).first()
+    if not sw: raise HTTPException(404, "投稿不存在")
+    for ver in sw.versions:
+        storage_service.delete_file(ver.oss_key)
+    db.delete(sw)
+    db.commit()
+    return ok(message="删除成功")
+
+
+class ReviewSubmissionBody(BaseModel):
+    action: str  # "publish" | "reject"
+    reason: str | None = None
+
+
+@router.patch("/{software_id}/review")
+async def review_software_submission(software_id: int, body: ReviewSubmissionBody, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Admin review of a member submission: publish it, or reject it with a reason."""
+    sw = db.query(Software).filter(Software.id == software_id).first()
+    if not sw: raise HTTPException(404, "软件不存在")
+    if body.action == "publish":
+        for v in sw.versions:
+            v.is_published = True
+        sw.is_published = True
+        sw.submission_status = "published"
+        sw.rejected_reason = None
+        db.commit(); db.refresh(sw)
+        return ok(sw.to_dict(include_versions=True), "已发布")
+    if body.action == "reject":
+        if not (body.reason or "").strip():
+            raise HTTPException(400, "请填写驳回理由")
+        if sw.submission_status == "published" and sw.is_published:
+            raise HTTPException(400, "已发布内容不能驳回，请先取消发布")
+        sw.submission_status = "rejected"
+        sw.rejected_reason = body.reason.strip()
+        db.commit(); db.refresh(sw)
+        return ok(sw.to_dict(), "已驳回")
+    raise HTTPException(400, "无效的操作")
 
 
 @router.get("/brands/list")

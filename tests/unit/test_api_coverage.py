@@ -86,7 +86,7 @@ def test_documents_list_upload_get(monkeypatch):
     async def read():
         return b"%PDF"
     file.read = read
-    result = asyncio.run(documents.upload_document(file=file, brand="siemens", category="plc-manual", series="", description="desc", db=db, admin=_user()))
+    result = asyncio.run(documents.upload_document(file=file, brand="siemens", category="plc-manual", series="", description="desc", db=db, user=_user()))
     assert "上传成功" in result["message"]
 
     db = MagicMock()
@@ -252,7 +252,7 @@ def test_software_list_upload_get_add_delete(monkeypatch):
         _chain(items=[SimpleNamespace(value="utility")]),
     ]
     db.flush = lambda: None
-    assert asyncio.run(software.upload_software(file=file, brand="siemens", category="utility", version="1.0", description="desc", db=db, admin=_user()))["message"] == "上传成功"
+    assert asyncio.run(software.upload_software(file=file, brand="siemens", category="utility", version="1.0", description="desc", db=db, user=_user()))["message"] == "上传成功"
 
     db = MagicMock()
     db.query.return_value = _chain(first=sw)
@@ -911,7 +911,8 @@ def _direct_upload_token(claims_extra: dict) -> str:
     from app.core.config import settings
     claims = {"oss_key": "software/siemens/abc.zip", "filename": "t.zip", "brand": "siemens",
               "category": "utility", "version": "1.0", "description": "",
-              "content_type": "application/zip", "size": 100}
+              "content_type": "application/zip", "size": 100,
+              "is_admin": True, "submitted_by": None}
     claims.update(claims_extra)
     return jwt.encode(claims, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
@@ -924,7 +925,7 @@ def test_software_direct_upload_init_local(monkeypatch):
                             _chain(items=[SimpleNamespace(value="utility")])]
     body = software.UploadInitBody(filename="t.zip", brand="siemens", category="utility",
                                    version="1.0", size=100)
-    result = asyncio.run(software.upload_init(body, db=db, admin=_user()))
+    result = asyncio.run(software.upload_init(body, db=db, user=_user()))
     assert result["data"]["mode"] == "sync"
 
 
@@ -941,7 +942,7 @@ def test_software_direct_upload_init_multipart(monkeypatch):
     body = software.UploadInitBody(filename="t.zip", brand="siemens", category="utility",
                                    version="1.0", content_type="application/zip",
                                    size=software.settings.UPLOAD_PART_SIZE_MB * 1024 * 1024 + 1)
-    result = asyncio.run(software.upload_init(body, db=db, admin=_user()))
+    result = asyncio.run(software.upload_init(body, db=db, user=_user()))
     data = result["data"]
     assert data["mode"] == "multipart"
     assert len(data["part_urls"]) == 2
@@ -965,7 +966,7 @@ def test_software_direct_upload_init_single(monkeypatch):
                             _chain(items=[SimpleNamespace(value="utility")])]
     body = software.UploadInitBody(filename="t.zip", brand="siemens", category="utility",
                                    version="1.0", size=1024)
-    data = asyncio.run(software.upload_init(body, db=db, admin=_user()))["data"]
+    data = asyncio.run(software.upload_init(body, db=db, user=_user()))["data"]
     assert data["mode"] == "single"
     assert data["upload_url"] == "https://oss/single"
 
@@ -984,7 +985,7 @@ def test_software_direct_upload_complete_multipart(monkeypatch):
     db.flush = lambda: None
     parts = [software.UploadPartResult(part_number=2, etag="B"), software.UploadPartResult(part_number=1, etag="A")]
     body = software.UploadCompleteBody(token=token, parts=parts)
-    result = asyncio.run(software.upload_complete(body, db=db, admin=_user()))
+    result = asyncio.run(software.upload_complete(body, db=db, user=_user()))
     assert result["message"] == "上传成功"
 
 
@@ -1000,7 +1001,7 @@ def test_software_direct_upload_complete_single(monkeypatch):
     db.query.return_value = _chain(first=None)
     db.flush = lambda: None
     body = software.UploadCompleteBody(token=token)
-    assert asyncio.run(software.upload_complete(body, db=db, admin=_user()))["message"] == "上传成功"
+    assert asyncio.run(software.upload_complete(body, db=db, user=_user()))["message"] == "上传成功"
 
 
 def test_software_direct_upload_complete_single_missing(monkeypatch):
@@ -1011,7 +1012,7 @@ def test_software_direct_upload_complete_single_missing(monkeypatch):
     monkeypatch.setattr(oss_mod.oss_service, "head_object", lambda *a, **k: False)
     token = _direct_upload_token({"mode": "single"})
     with pytest.raises(HTTPException):
-        asyncio.run(software.upload_complete(software.UploadCompleteBody(token=token), db=MagicMock(), admin=_user()))
+        asyncio.run(software.upload_complete(software.UploadCompleteBody(token=token), db=MagicMock(), user=_user()))
 
 
 def test_software_direct_upload_abort(monkeypatch):
@@ -1022,11 +1023,11 @@ def test_software_direct_upload_abort(monkeypatch):
     called = {}
     monkeypatch.setattr(oss_mod.oss_service, "abort_multipart_upload", lambda *a, **k: called.setdefault("aborted", True))
     token = _direct_upload_token({"mode": "multipart", "upload_id": "uid-1"})
-    asyncio.run(software.upload_abort(software.UploadAbortBody(token=token), admin=_user()))
+    asyncio.run(software.upload_abort(software.UploadAbortBody(token=token), user=_user()))
     assert called.get("aborted") is True
 
 
 def test_software_direct_upload_bad_token():
     from app.api import software
     with pytest.raises(HTTPException):
-        asyncio.run(software.upload_complete(software.UploadCompleteBody(token="bad"), db=MagicMock(), admin=_user()))
+        asyncio.run(software.upload_complete(software.UploadCompleteBody(token="bad"), db=MagicMock(), user=_user()))
