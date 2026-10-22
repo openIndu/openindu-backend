@@ -94,8 +94,6 @@ class SubmitDocument:
         rules.require_document_size(size_bytes if size_bytes is not None else self._size_of(file_stream), self._max_mb)
 
         meta = self.storage.upload(file_stream, filename, f"{self._prefix}/{brand}", content_type or "application/pdf")
-        status, _ = rules.initial_submission_state(submitter.role)
-        submitted_by = None if submitter.role == "admin" else submitter.id
         try:
             return self.docs.add(
                 meta=meta,
@@ -104,8 +102,8 @@ class SubmitDocument:
                 category=category,
                 series=series or None,
                 description=description,
-                submitted_by=submitted_by,
-                submission_status=status,
+                submitted_by=submitter.id,
+                submission_status=rules.PENDING,
             )
         except Exception:
             self.storage.delete(meta["oss_key"])

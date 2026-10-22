@@ -10,6 +10,7 @@ from app.catalog.application.submissions import (
     CompleteDirectUpload,
     PlanDirectUpload,
     ReviewSoftwareSubmission,
+    SubmitSoftwarePackage,
 )
 from app.catalog.domain import rules
 from app.domain.catalog import CatalogCode, CatalogError
@@ -193,12 +194,6 @@ def test_package_rules_reject_bad_format_and_size():
     rules.require_valid_package("a.zip", 1024, 5)
 
 
-def test_submission_initial_state():
-    assert rules.initial_submission_state("admin") == ("published", None)
-    status, submitted_by = rules.initial_submission_state("member")
-    assert status == "pending" and submitted_by is None
-
-
 def test_review_rules():
     assert rules.require_reject_reason(" 描述太简单 ") == "描述太简单"
     with pytest.raises(CatalogError) as empty:
@@ -328,8 +323,50 @@ def test_complete_direct_upload_new_entry_and_duplicate():
     catalog.entries[existing.id] = existing
     with pytest.raises(CatalogError) as dup:
         use_case.execute("tok", None, "hash")
-    assert dup.value.code is CatalogCode.VERSION_FILE_EXISTS
+    assert dup.value.code is CatalogCode.SOFTWARE_FILE_EXISTS
     assert storage.deleted == ["software/siemens/dup.zip"]
+
+
+def test_direct_upload_init_rejects_duplicate_new_entry():
+    catalog = FakeCatalog()
+    existing = make_sw(sid=1)
+    existing.versions = [SimpleNamespace(oss_key="software/siemens/gen-t.zip", version="1.0")]
+    catalog.entries[1] = existing
+    use_case = PlanDirectUpload(FakeTags(), catalog, FakeSigner(), FakeCodec({}), "software", 5, 1024, 60)
+
+    with pytest.raises(CatalogError) as dup:
+        use_case.execute(SimpleNamespace(id=2, role="member"), filename="t.zip", brand="siemens",
+                         category="utility", version="2.0", description="", content_type="application/zip",
+                         size=10, software_id=None)
+    assert dup.value.code is CatalogCode.SOFTWARE_FILE_EXISTS
+
+
+def test_direct_upload_init_rejects_duplicate_version():
+    catalog = FakeCatalog()
+    existing = make_sw(sid=1)
+    existing.versions = [SimpleNamespace(oss_key="software/siemens/gen-t.zip", version="1.0")]
+    catalog.entries[1] = existing
+    use_case = PlanDirectUpload(FakeTags(), catalog, FakeSigner(), FakeCodec({}), "software", 5, 1024, 60)
+
+    with pytest.raises(CatalogError) as dup:
+        use_case.execute(SimpleNamespace(id=3, role="admin"), filename="t.zip", brand="siemens",
+                         category="utility", version="2.0", description="", content_type="application/zip",
+                         size=10, software_id=1)
+    assert dup.value.code is CatalogCode.VERSION_FILE_EXISTS
+
+
+def test_submit_software_records_submitter_and_pending():
+    catalog = FakeCatalog()
+    storage = FakeStorage()
+    import io
+    use_case = SubmitSoftwarePackage(tags=FakeTags(), catalog=catalog, storage=storage,
+                                     software_prefix="software", max_size_gb=5)
+    entry = use_case.execute(io.BytesIO(b"PK"), "a.zip", "application/zip", "siemens",
+                             "utility", "1.0", "", SimpleNamespace(id=7, role="admin"))
+    assert entry.submitted_by == 7
+    assert entry.submission_status == "pending"
+    assert catalog.added[0]["submitted_by"] == 7
+    assert catalog.added[0]["submission_status"] == "pending"
 
 
 # ── downloads ─────────────────────────────────────────────────────────────────

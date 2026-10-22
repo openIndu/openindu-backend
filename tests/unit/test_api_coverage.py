@@ -90,7 +90,7 @@ def test_documents_list_upload_get(monkeypatch):
         return b"%PDF"
     file.read = read
     result = asyncio.run(documents.upload_document(file=file, brand="siemens", category="plc-manual", series="", description="desc", db=db, user=_user()))
-    assert "上传成功" in result["message"]
+    assert "投稿成功，等待管理员审核" in result["message"]
 
     db = MagicMock()
     db.query.return_value = _chain(first=doc)
@@ -287,7 +287,7 @@ def test_software_list_upload_get_add_delete(monkeypatch):
         _chain(items=[SimpleNamespace(value="utility")]),
     ]
     db.flush = lambda: None
-    assert asyncio.run(software.upload_software(file=file, brand="siemens", category="utility", version="1.0", description="desc", db=db, user=_user()))["message"] == "上传成功"
+    assert asyncio.run(software.upload_software(file=file, brand="siemens", category="utility", version="1.0", description="desc", db=db, user=_user()))["message"] == "投稿成功，等待管理员审核"
 
     db = MagicMock()
     db.query.return_value = _chain(first=sw)
@@ -948,7 +948,8 @@ def test_software_direct_upload_init_local(monkeypatch):
     monkeypatch.setattr(_ss, "_backend", "local")
     db = MagicMock()
     db.query.side_effect = [_chain(items=[SimpleNamespace(value="siemens")]),
-                            _chain(items=[SimpleNamespace(value="utility")])]
+                            _chain(items=[SimpleNamespace(value="utility")]),
+                            _chain(first=None)]
     body = software.UploadInitBody(filename="t.zip", brand="siemens", category="utility",
                                    version="1.0", size=100)
     result = asyncio.run(software.upload_init(body, db=db, user=_user()))
@@ -966,7 +967,8 @@ def test_software_direct_upload_init_multipart(monkeypatch):
                         lambda key, uid, pn, exp: f"https://oss/part{pn}")
     db = MagicMock()
     db.query.side_effect = [_chain(items=[SimpleNamespace(value="siemens")]),
-                            _chain(items=[SimpleNamespace(value="utility")])]
+                            _chain(items=[SimpleNamespace(value="utility")]),
+                            _chain(first=None)]
     body = software.UploadInitBody(filename="t.zip", brand="siemens", category="utility",
                                    version="1.0", content_type="application/zip",
                                    size=settings.UPLOAD_PART_SIZE_MB * 1024 * 1024 + 1)
@@ -992,7 +994,8 @@ def test_software_direct_upload_init_single(monkeypatch):
     monkeypatch.setattr(oss_mod.oss_service, "presign_single_put", lambda *a, **k: "https://oss/single")
     db = MagicMock()
     db.query.side_effect = [_chain(items=[SimpleNamespace(value="siemens")]),
-                            _chain(items=[SimpleNamespace(value="utility")])]
+                            _chain(items=[SimpleNamespace(value="utility")]),
+                            _chain(first=None)]
     body = software.UploadInitBody(filename="t.zip", brand="siemens", category="utility",
                                    version="1.0", size=1024)
     data = asyncio.run(software.upload_init(body, db=db, user=_user()))["data"]
@@ -1015,7 +1018,7 @@ def test_software_direct_upload_complete_multipart(monkeypatch):
     parts = [software.UploadPartResult(part_number=2, etag="B"), software.UploadPartResult(part_number=1, etag="A")]
     body = software.UploadCompleteBody(token=token, parts=parts)
     result = asyncio.run(software.upload_complete(body, db=db, user=_user()))
-    assert result["message"] == "上传成功"
+    assert result["message"] == "投稿成功，等待管理员审核"
 
 
 def test_software_direct_upload_complete_single(monkeypatch):
@@ -1030,7 +1033,7 @@ def test_software_direct_upload_complete_single(monkeypatch):
     db.query.return_value = _chain(first=None)
     db.flush = lambda: None
     body = software.UploadCompleteBody(token=token)
-    assert asyncio.run(software.upload_complete(body, db=db, user=_user()))["message"] == "上传成功"
+    assert asyncio.run(software.upload_complete(body, db=db, user=_user()))["message"] == "投稿成功，等待管理员审核"
 
 
 def test_software_direct_upload_complete_single_missing(monkeypatch):

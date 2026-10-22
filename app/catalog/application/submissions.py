@@ -117,8 +117,6 @@ class SubmitSoftwarePackage:
         rules.require_valid_package(filename, size_bytes if size_bytes is not None else self._size_of(file_stream), self._max_gb)
 
         meta = self.storage.upload(file_stream, filename, f"{self._prefix}/{brand}", content_type or "application/octet-stream")
-        status, _ = rules.initial_submission_state(submitter.role)
-        submitted_by = None if submitter.role == "admin" else submitter.id
         try:
             return self.catalog.add_submission(
                 meta=meta,
@@ -127,8 +125,8 @@ class SubmitSoftwarePackage:
                 category=category,
                 version=version,
                 description=description,
-                submitted_by=submitted_by,
-                submission_status=status,
+                submitted_by=submitter.id,
+                submission_status=rules.PENDING,
             )
         except Exception:
             self.storage.delete(meta["oss_key"])
@@ -172,10 +170,17 @@ class PlanDirectUpload:
         rules.require_valid_package(filename, size, self._max_gb)
         rules.require_positive_size(size)
 
+        # Reject a duplicate package at init, before any byte is transferred:
+        # the storage key is deterministic (prefix/brand/filename), so an
+        # existing version row with the same key can never land. In local/sync
+        # mode the caller re-uploads via POST /upload, whose storage backend
+        # derives the identical key.
+        oss_key = self.signer.new_oss_key(filename, f"{self._prefix}/{brand}")
+        if self.catalog.find_version_by_oss_key(oss_key):
+            raise CatalogError(CatalogCode.VERSION_FILE_EXISTS if software_id else CatalogCode.SOFTWARE_FILE_EXISTS)
+
         if self.signer.is_local:
             return {"mode": "sync"}
-
-        oss_key = self.signer.new_oss_key(filename, f"{self._prefix}/{brand}")
         claims = {
             "oss_key": oss_key,
             "filename": filename,
@@ -187,7 +192,7 @@ class PlanDirectUpload:
             "size": size,
             "software_id": software_id,
             "is_admin": submitter.role == "admin",
-            "submitted_by": None if submitter.role == "admin" else submitter.id,
+            "submitted_by": submitter.id,
         }
 
         if size > self._part_size:
@@ -278,7 +283,7 @@ class CompleteDirectUpload:
     def _complete_new_entry(self, claims, oss_key, submitted_by, file_hash) -> tuple[SoftwareEntry, str]:
         if self.catalog.find_version_by_oss_key(oss_key):
             self.storage.delete(oss_key)
-            raise CatalogError(CatalogCode.VERSION_FILE_EXISTS)
+            raise CatalogError(CatalogCode.SOFTWARE_FILE_EXISTS)
         try:
             entry = self.catalog.add_submission_from_oss(
                 oss_key=oss_key,
@@ -290,12 +295,12 @@ class CompleteDirectUpload:
                 file_size=claims["size"],
                 file_hash=file_hash,
                 submitted_by=submitted_by,
-                submission_status="published" if claims.get("is_admin") else "pending",
+                submission_status=rules.PENDING,
             )
         except Exception:
             self.storage.delete(oss_key)
             raise
-        message = "上传成功" if claims.get("is_admin") else "投稿成功，等待管理员审核"
+        message = "投稿成功，等待管理员审核"
         return entry, message
 
 
