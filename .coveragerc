@@ -9,7 +9,7 @@ omit =
     app/services/oss_service.py
     app/middleware/*
     app/web_app.py
-    # FastAPI route wrappers that just delegate to auth_service
+    # FastAPI route wrappers that just delegate to the identity context
     app/api/auth.py
     # FastAPI dependencies that need running request context
     app/core/dependencies.py

@@ -163,7 +163,7 @@ async def delete_user(user_id: int, db: Session = Depends(get_db), admin: User =
 
     Associated data (visit_events / download_records / login_sessions /
     admin_audit_log) is preserved for audit history. The user is hidden from
-    the admin list and cannot log in (the auth_service login path also
+    the admin list and cannot log in (the identity login use case also
     refuses if ``deleted_at`` is set).
     """
     user = db.query(User).filter(User.id == user_id).first()

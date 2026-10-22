@@ -1,4 +1,6 @@
-"""Authentication API."""
+"""Authentication API — thin HTTP adapter over the identity context."""
+from dataclasses import asdict
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
@@ -9,8 +11,9 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import get_db, require_auth
 from app.core.utils import ok, real_client_ip
 from app.domain.auth import BizCode
+from app.identity.application.authenticate import AuthenticationIntent
+from app.identity.provider import identity
 from app.models.user import User
-from app.services.auth_service import auth_service
 
 router = APIRouter(prefix="/auth")
 limiter = Limiter(key_func=get_remote_address)
@@ -50,32 +53,37 @@ class SliderVerifyRequest(BaseModel):
 @limiter.limit("30/minute")
 async def slider_captcha(request: Request, db: Session = Depends(get_db)):
     """Fresh slider-puzzle challenge for gating /auth/send-code."""
-    return ok(auth_service.issue_slider_challenge(db, real_client_ip(request)))
+    issued = identity(db).issue_captcha.execute(real_client_ip(request))
+    return ok(asdict(issued))
 
 
 @router.post("/slider-captcha/verify")
 @limiter.limit("30/minute")
 async def slider_verify(request: Request, body: SliderVerifyRequest, db: Session = Depends(get_db)):
     """Check the drag position; on success returns a one-time send-code ticket."""
-    return ok(auth_service.verify_slider_challenge(db, body.challenge_id, body.x))
+    return ok(asdict(identity(db).verify_captcha.execute(body.challenge_id, body.x)))
 
 
 @router.post("/send-code")
 @limiter.limit("5/minute")
 async def send_code(request: Request, body: PhoneRequest, db: Session = Depends(get_db)):
-    auth_service.send_code(db, body.phone, body.slider_ticket)
+    identity(db).send_code.execute(body.phone, body.slider_ticket)
     return ok(biz_code=BizCode.AUTH_SMS_SENT)
 
 
 @router.post("/login")
 @limiter.limit("10/minute")
 async def login(request: Request, body: AuthRequest, db: Session = Depends(get_db)):
-    return ok(auth_service.login(db, body.phone, body.code), biz_code=BizCode.AUTH_LOGIN_SUCCESS)
+    ctx = identity(db)
+    result = ctx.authenticate.execute(body.phone, body.code, AuthenticationIntent.LOGIN)
+    return ok(_payload(ctx, result.account), biz_code=BizCode.AUTH_LOGIN_SUCCESS)
 
 
 @router.post("/register")
 async def register(body: AuthRequest, db: Session = Depends(get_db)):
-    return ok(auth_service.register(db, body.phone, body.code), biz_code=BizCode.AUTH_REGISTER_SUCCESS)
+    ctx = identity(db)
+    result = ctx.authenticate.execute(body.phone, body.code, AuthenticationIntent.REGISTER)
+    return ok(_payload(ctx, result.account), biz_code=BizCode.AUTH_REGISTER_SUCCESS)
 
 
 @router.post("/sign-in")
@@ -91,13 +99,18 @@ async def sign_in(request: Request, body: AuthRequest, db: Session = Depends(get
     /login and /register remain for backwards compatibility with any external
     caller; new portal flows should use /sign-in instead.
     """
-    result, outcome = auth_service.sign_in(db, body.phone, body.code)
-    return ok(result, biz_code=outcome)
+    ctx = identity(db)
+    result = ctx.authenticate.execute(body.phone, body.code, AuthenticationIntent.SIGN_IN)
+    payload = _payload(ctx, result.account)
+    payload["is_new_user"] = result.is_new_user
+    return ok(payload, biz_code=result.outcome)
 
 
 @router.post("/refresh")
 async def refresh(body: RefreshRequest, db: Session = Depends(get_db)):
-    return ok(auth_service.refresh_token(db, body.refresh_token), biz_code=BizCode.AUTH_TOKEN_REFRESHED)
+    ctx = identity(db)
+    account, pair = ctx.refresh.execute(body.refresh_token)
+    return ok({"user": account.to_dict(), "tokens": asdict(pair)}, biz_code=BizCode.AUTH_TOKEN_REFRESHED)
 
 
 @router.get("/me")
@@ -118,7 +131,7 @@ async def update_me(body: ProfileUpdateRequest, db: Session = Depends(get_db), c
 async def logout(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     ua = request.headers.get("user-agent", "")[:512]
     client_id = (request.headers.get("x-openindu-client-id") or "").strip()[:64] or None
-    auth_service.logout(db, credentials.credentials, user_agent=ua, client_id=client_id)
+    identity(db).logout.execute(credentials.credentials, user_agent=ua, client_id=client_id)
     return ok(biz_code=BizCode.AUTH_LOGGED_OUT)
 
 
@@ -130,8 +143,7 @@ async def delete_account(
     current_user: User = Depends(require_auth),
 ):
     """Permanently delete user account and all associated data."""
-    ua = request.headers.get("user-agent", "")[:512]
-    auth_service.delete_account(db, current_user, credentials.credentials, user_agent=ua)
+    identity(db).delete_account.execute(current_user, credentials.credentials)
     return ok(biz_code=BizCode.AUTH_ACCOUNT_DELETED)
 
 
@@ -142,5 +154,10 @@ async def change_phone(
     current_user: User = Depends(require_auth),
 ):
     """Change user phone number with verification code."""
-    auth_service.change_phone(db, current_user, body.new_phone, body.code)
-    return ok({"user": current_user.to_dict()}, biz_code=BizCode.AUTH_PHONE_CHANGED)
+    account = identity(db).change_phone.execute(current_user, body.new_phone, body.code)
+    return ok({"user": account.to_dict()}, biz_code=BizCode.AUTH_PHONE_CHANGED)
+
+
+def _payload(ctx, account: User) -> dict:
+    """Adapter contract: authenticated account plus a fresh token pair."""
+    return {"user": account.to_dict(), "tokens": asdict(ctx.issue_tokens.execute(account))}

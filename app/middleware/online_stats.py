@@ -7,8 +7,8 @@ from sqlalchemy.exc import IntegrityError
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.database import SessionLocal
+from app.identity.infrastructure.tokens import decode_token
 from app.models.login_session import LoginSession
-from app.services.auth_service import decode_token
 from app.services.geo_service import resolve_ip_geo
 
 

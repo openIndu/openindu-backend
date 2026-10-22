@@ -1,14 +1,12 @@
 """Unit tests for dashboard period stats (today / this month in Asia/Shanghai)."""
-from datetime import datetime, timedelta, timezone
-
-import pytest
+from datetime import datetime, timedelta
 
 from app.api.stats import (
+    CST,
     _month_range_utc,
     _to_naive_utc,
     _today_range_utc,
     _trailing_12_months,
-    CST,
 )
 
 

@@ -2,8 +2,6 @@
 import os
 from unittest.mock import patch
 
-import pytest
-
 
 class TestSettings:
     """Verify settings load correctly from environment and defaults."""

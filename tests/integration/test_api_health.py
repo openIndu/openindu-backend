@@ -7,8 +7,9 @@ class TestHealthEndpoint:
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        from app.web_app import app
         from fastapi.testclient import TestClient
+
+        from app.web_app import app
         self.client = TestClient(app)
 
     def test_health_returns_200(self):

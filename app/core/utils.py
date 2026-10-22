@@ -82,7 +82,7 @@ def ok(data=None, message: str | None = None, *, biz_code: BizCode = BizCode.OK)
 # Datetime serialization
 #
 # Every DateTime column in our SQLAlchemy models is stored as a NAIVE UTC
-# datetime (we strip tzinfo before INSERT, see `utcnow()` in auth_service).
+# datetime (we strip tzinfo before INSERT, see `utcnow()` above).
 # When such a value is serialized via ``dt.isoformat()`` directly, the output
 # has no timezone marker — e.g. ``2026-06-25T09:37:53.369247``. Browsers'
 # ``new Date(...)`` then parses that as **local time**, which on a CST machine
@@ -92,6 +92,11 @@ def ok(data=None, message: str | None = None, *, biz_code: BizCode = BizCode.OK)
 # the wire format is unambiguous. The frontend then renders with
 # ``new Date(s).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })``.
 # ---------------------------------------------------------------------------
+
+
+def utcnow() -> datetime:
+    """Naive UTC now — the storage convention across all models."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def iso_utc(dt: datetime | None) -> str | None:

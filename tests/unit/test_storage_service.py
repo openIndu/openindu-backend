@@ -1,8 +1,6 @@
 """Unit tests for local FileStorageService — upload, download, delete, list."""
 import hashlib
 import io
-import os
-import tempfile
 from pathlib import Path
 
 import pytest
