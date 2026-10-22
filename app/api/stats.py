@@ -60,6 +60,13 @@ def _month_range_utc() -> tuple[datetime, datetime]:
     return (_to_naive_utc(start_cst), _to_naive_utc(end_cst))
 
 
+def _last_30_days_range_utc() -> tuple[datetime, datetime]:
+    """Return the last 30 CST calendar days, including today, through now."""
+    now = _now()
+    today_start, _ = _today_range_utc()
+    return today_start - timedelta(days=29), now
+
+
 def _trailing_12_months() -> tuple[list[tuple[int, int]], datetime]:
     """Return (months, year_start_utc) for the trailing 12 months ending this month (CST).
 
@@ -629,8 +636,7 @@ async def geo_distribution_stats(
     """Geo distribution for a selectable window, independent of the dashboard's fixed month scope.
 
     range=day -> today (CST, same window as the dashboard's today_* fields);
-    month -> this calendar month (CST, same window as the dashboard's
-    geo_distribution field); year -> trailing 12 months (same year_start_utc
+    month -> last 30 CST calendar days including today; year -> trailing 12 months (same year_start_utc
     as the dashboard's yearly_* series), through now.
     """
     if range == "day":
@@ -639,7 +645,7 @@ async def geo_distribution_stats(
         _, year_start_utc = _trailing_12_months()
         start, end = year_start_utc, _now()
     else:
-        start, end = _month_range_utc()
+        start, end = _last_30_days_range_utc()
     return ok({"geo_distribution": _geo_distribution(db, start, end)})
 
 

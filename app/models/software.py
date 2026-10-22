@@ -3,13 +3,13 @@ from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Intege
 from sqlalchemy.orm import relationship
 
 from app.core.utils import iso_utc
-from app.models import Base
+from app.models import Base, BigIntPK
 
 
 class Software(Base):
     __tablename__ = "software"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigIntPK, primary_key=True, autoincrement=True)
     filename = Column(String(500), nullable=False)
     original_name = Column(String(500), nullable=False)
     brand = Column(String(50), nullable=False, index=True)
@@ -19,9 +19,15 @@ class Software(Base):
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     is_published = Column(Boolean, nullable=False, default=False)
+    # Member submission tracking. Admin uploads keep the "published" default;
+    # member uploads start as "pending" until an admin reviews them.
+    submitted_by = Column(BigIntPK, ForeignKey("users.id"), nullable=True, index=True)
+    submission_status = Column(String(20), nullable=False, default="published", server_default="published")
+    rejected_reason = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
     versions = relationship("SoftwareVersion", back_populates="software", cascade="all, delete-orphan")
+    submitter = relationship("User")
 
     def to_dict(self, include_versions: bool = False) -> dict:
         # latest_version_size = size of the version row whose tag matches
@@ -46,6 +52,9 @@ class Software(Base):
             "description": self.description,
             "is_active": self.is_active,
             "is_published": self.is_published,
+            "submitted_by": self.submitted_by,
+            "submission_status": self.submission_status,
+            "rejected_reason": self.rejected_reason,
             "created_at": iso_utc(self.created_at),
         }
         if include_versions:
@@ -56,7 +65,7 @@ class Software(Base):
 class SoftwareVersion(Base):
     __tablename__ = "software_versions"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigIntPK, primary_key=True, autoincrement=True)
     software_id = Column(BigInteger, ForeignKey("software.id"), nullable=False, index=True)
     version = Column(String(100), nullable=False)
     # Per-version display name — each upload preserves its real file name so

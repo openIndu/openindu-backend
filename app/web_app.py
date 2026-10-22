@@ -29,6 +29,8 @@ from app.api import (
 )
 from app.core.config import settings
 from app.core.database import engine
+from app.core.err_code import ErrorCode
+from app.domain.auth import AuthError
 from app.middleware.online_stats import OnlineStatsMiddleware
 from app.middleware.token_blacklist import TokenBlacklistMiddleware
 from app.models import Base
@@ -100,6 +102,11 @@ app.state.limiter = limiter
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(status_code=429, content={"code": 429, "detail": "请求过于频繁"})
+
+
+@app.exception_handler(AuthError)
+async def auth_error_handler(request: Request, exc: AuthError):
+    return JSONResponse(status_code=ErrorCode.status(exc.code), content=ErrorCode.error_body(exc.code, **exc.params))
 
 
 @app.exception_handler(Exception)

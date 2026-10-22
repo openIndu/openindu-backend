@@ -119,7 +119,7 @@ class TestApproveSendsSms:
         assert response.status_code == 200
         assert response.json()["data"]["sms_notified"] is False
 
-    def test_mock_mode_counts_as_notified(self, client):
+    def test_mock_mode_does_not_claim_delivery(self, client):
         from app.core.database import SessionLocal
 
         db = SessionLocal()
@@ -130,7 +130,7 @@ class TestApproveSendsSms:
                 response = _approve(client, user.id)
 
         assert response.status_code == 200
-        assert response.json()["data"]["sms_notified"] is True
+        assert response.json()["data"]["sms_notified"] is False
         mock_send.assert_not_called()
 
 
