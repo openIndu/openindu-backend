@@ -7,7 +7,7 @@ decisions out of HTTP handlers does not complete a migration.
 | Context | Owns | Current entry points | Migration status |
 | --- | --- | --- | --- |
 | Identity | account registration, SMS authentication, session lifecycle | `api/auth.py`, `services/auth_service.py` | SMS login, registration and sign-in migrated |
-| Membership | applications, review, role transition and notification | `api/member_applications.py`, `api/users.py` | application commands migrated; user administration remains legacy |
+| Membership | applications, review, role transition, account restriction and notification | `api/member_applications.py`, `api/users.py` | commands migrated; user-list query remains legacy |
 | Catalog | software, documents, tags, publication and downloads | `api/software.py`, `api/documents.py`, `api/tags.py` | legacy |
 | Analytics | visits and statistics | `api/visits.py`, `api/stats.py`, `services/geo_service.py` | legacy |
 | Knowledge | chat, retrieval and MCP tools | `api/chat.py`, `api/chat_sessions.py`, `mcp/` | legacy |
@@ -29,9 +29,8 @@ depend on application/domain; application depends on domain and ports; domain
 depends only on the shared auth error codes and the standard library. The
 identity boundary test enforces the latter two layers.
 
-Migration order: finish Identity's CAPTCHA, SMS and session use cases; finish
-Membership user administration and queries; then Catalog,
-Analytics and Knowledge. Keep existing routes and database schema stable during
+Migration order: finish Identity's CAPTCHA, SMS and session use cases; move
+Membership user-list query; then Catalog, Analytics and Knowledge. Keep existing routes and database schema stable during
 each move, and add behavior tests for the use case before replacing its route
 implementation. The compatibility adapters are removed only after every caller
 has moved.
