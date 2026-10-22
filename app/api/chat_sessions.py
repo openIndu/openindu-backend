@@ -6,25 +6,19 @@ PATCH  /api/v1/chat/sessions/{id}         -> rename session
 DELETE /api/v1/chat/sessions/{id}         -> delete session + messages
 GET    /api/v1/chat/sessions/{id}/messages -> load messages
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db, require_member
 from app.core.utils import ok
+from app.knowledge.provider import knowledge
 from app.models.chat_message import ChatMessage
 from app.models.chat_session import ChatSession
 from app.models.user import User
 
 router = APIRouter()
-
-
-def _get_session_or_404(session_id: int, user_id: int, db: Session) -> ChatSession:
-    s = db.query(ChatSession).filter(ChatSession.id == session_id, ChatSession.user_id == user_id).first()
-    if not s:
-        raise HTTPException(status_code=404, detail="会话不存在")
-    return s
 
 
 @router.get("/chat/sessions")
@@ -46,10 +40,7 @@ def create_session(
     current_user: User = Depends(require_member),
     db: Session = Depends(get_db),
 ):
-    s = ChatSession(user_id=current_user.id, title="新会话")
-    db.add(s)
-    db.commit()
-    db.refresh(s)
+    s = knowledge(db).create_session.execute(user_id=current_user.id)
     return ok(s.to_dict())
 
 
@@ -64,13 +55,7 @@ def rename_session(
     current_user: User = Depends(require_member),
     db: Session = Depends(get_db),
 ):
-    title = body.title.strip()[:100]
-    if not title:
-        raise HTTPException(status_code=400, detail="标题不能为空")
-    s = _get_session_or_404(session_id, current_user.id, db)
-    s.title = title
-    db.commit()
-    db.refresh(s)
+    s = knowledge(db).rename_session.execute(session_id=session_id, user_id=current_user.id, title=body.title)
     return ok(s.to_dict())
 
 
@@ -80,9 +65,7 @@ def delete_session(
     current_user: User = Depends(require_member),
     db: Session = Depends(get_db),
 ):
-    s = _get_session_or_404(session_id, current_user.id, db)
-    db.delete(s)
-    db.commit()
+    knowledge(db).delete_session.execute(session_id=session_id, user_id=current_user.id)
     return ok({"id": session_id})
 
 
@@ -92,7 +75,7 @@ def get_messages(
     current_user: User = Depends(require_member),
     db: Session = Depends(get_db),
 ):
-    _get_session_or_404(session_id, current_user.id, db)
+    knowledge(db).ensure_own_session.execute(session_id, current_user.id)
     msgs = (
         db.query(ChatMessage)
         .filter(ChatMessage.session_id == session_id)
@@ -114,20 +97,7 @@ def set_message_feedback(
     current_user: User = Depends(require_member),
     db: Session = Depends(get_db),
 ):
-    if body.value not in (1, -1):
-        raise HTTPException(status_code=400, detail="value must be 1 or -1")
-    _get_session_or_404(session_id, current_user.id, db)
-    msg = (
-        db.query(ChatMessage)
-        .filter(
-            ChatMessage.id == message_id,
-            ChatMessage.session_id == session_id,
-            ChatMessage.role == "assistant",
-        )
-        .first()
+    knowledge(db).set_message_feedback.execute(
+        session_id=session_id, user_id=current_user.id, message_id=message_id, value=body.value
     )
-    if not msg:
-        raise HTTPException(status_code=404, detail="消息不存在")
-    msg.feedback = body.value
-    db.commit()
     return ok({"id": message_id, "feedback": body.value})
