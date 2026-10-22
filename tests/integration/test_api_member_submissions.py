@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.database import SessionLocal, engine
-from app.core.dependencies import require_admin, require_auth, require_member
+from app.core.dependencies import get_current_user, require_admin, require_auth, require_member
 from app.models import Base
 from app.models.resource_tag import ResourceTag
 from app.models.user import User
@@ -80,6 +80,7 @@ def _client_as(user: User) -> TestClient:
     app.dependency_overrides[require_auth] = _auth
     app.dependency_overrides[require_member] = _auth
     app.dependency_overrides[require_admin] = _auth
+    app.dependency_overrides[get_current_user] = _auth
     return TestClient(app)
 
 
@@ -119,6 +120,15 @@ def _upload_software(client, version="1.0"):
 
 
 class TestSoftwareSubmissions:
+    def test_unpublished_package_requires_owner_or_admin(self, member, member2, admin):
+        sw_id = _upload_software(_client_as(member)).json()["data"]["id"]
+        other = _client_as(member2)
+        assert all(item["id"] != sw_id for item in other.get("/api/v1/software").json()["data"]["items"])
+        assert other.get(f"/api/v1/software/{sw_id}").status_code == 404
+        assert other.get(f"/api/v1/software/{sw_id}/download-link").status_code == 404
+        assert _client_as(member).get(f"/api/v1/software/{sw_id}").status_code == 200
+        assert _client_as(admin).get(f"/api/v1/software/{sw_id}").status_code == 200
+
     def test_member_upload_creates_pending_submission(self, member):
         client = _client_as(member)
         resp = _upload_software(client)
@@ -262,6 +272,16 @@ def _upload_document(client):
 
 
 class TestDocumentSubmissions:
+    def test_unpublished_document_requires_owner_or_admin(self, member, member2, admin):
+        doc_id = _upload_document(_client_as(member)).json()["data"]["id"]
+        other = _client_as(member2)
+        assert all(item["id"] != doc_id for item in other.get("/api/v1/documents").json()["data"]["items"])
+        assert other.get(f"/api/v1/documents/{doc_id}").status_code == 404
+        assert other.get(f"/api/v1/documents/{doc_id}/download-link").status_code == 404
+        assert other.get(f"/api/v1/documents/{doc_id}/preview-link").status_code == 404
+        assert _client_as(member).get(f"/api/v1/documents/{doc_id}").status_code == 200
+        assert _client_as(admin).get(f"/api/v1/documents/{doc_id}").status_code == 200
+
     def test_member_upload_creates_pending_submission(self, member):
         client = _client_as(member)
         resp = _upload_document(client)

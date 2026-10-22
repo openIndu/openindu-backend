@@ -49,7 +49,7 @@ def test_documents_helpers_and_edges(monkeypatch):
     assert documents.client_ip(_Request()) == "127.0.0.1"
 
     db = MagicMock()
-    doc = SimpleNamespace(id=1, oss_key="docs/a.pdf", original_name="a.pdf", download_count=None)
+    doc = SimpleNamespace(id=1, oss_key="docs/a.pdf", original_name="a.pdf", download_count=None, is_published=True)
     db.query.side_effect = [_chain(first=doc), _chain(count=0)]
     monkeypatch.setattr(documents.storage_service, "get_download_url", lambda key: {"url": f"/files/{key}", "expires_in": None})
     result = asyncio.run(documents.get_document_download_link(1, _Request(), db, _user("member")))
@@ -66,10 +66,10 @@ def test_documents_list_upload_get(monkeypatch):
     from app.api import documents
 
     db = MagicMock()
-    doc = SimpleNamespace(id=1, oss_key="docs/a.pdf", original_name="a.pdf")
+    doc = SimpleNamespace(id=1, oss_key="docs/a.pdf", original_name="a.pdf", is_published=True)
     doc.to_dict = lambda: {"id": doc.id}
     db.query.return_value = _chain(items=[doc], count=1)
-    result = asyncio.run(documents.list_documents(brand="siemens", keyword="a", page=1, size=20, sort_by="upload_time", sort_order="desc", db=db))
+    result = asyncio.run(documents.list_documents(brand="siemens", keyword="a", page=1, size=20, sort_by="upload_time", sort_order="desc", db=db, viewer=_user()))
     assert result["data"]["total"] == 1
 
     db = MagicMock()
@@ -91,7 +91,7 @@ def test_documents_list_upload_get(monkeypatch):
 
     db = MagicMock()
     db.query.return_value = _chain(first=doc)
-    result = asyncio.run(documents.get_document(1, db=db))
+    result = asyncio.run(documents.get_document(1, db=db, viewer=_user()))
     assert result["data"]["id"] == 1
 
 
@@ -173,7 +173,7 @@ def test_software_responses_do_not_expose_legacy_series():
     )
     db = MagicMock()
     db.query.return_value = _chain(items=[version], count=1)
-    result = asyncio.run(software.list_software(expand_versions=True, page=1, size=20, sort_by="upload_time", sort_order="desc", db=db))
+    result = asyncio.run(software.list_software(expand_versions=True, page=1, size=20, sort_by="upload_time", sort_order="desc", db=db, viewer=_user()))
     assert "series" not in result["data"]["items"][0]
 
 
@@ -223,7 +223,7 @@ def test_software_download_and_delete(monkeypatch):
 def test_software_list_upload_get_add_delete(monkeypatch):
     from app.api import software
 
-    sw = SimpleNamespace(id=1, original_name="Tool.zip", brand="siemens", latest_version="1.0", download_count=0)
+    sw = SimpleNamespace(id=1, original_name="Tool.zip", brand="siemens", latest_version="1.0", download_count=0, is_published=True)
     sw.to_dict = lambda include_versions=False: {"id": sw.id}
     sw.versions = []
     ver = SimpleNamespace(id=10, software_id=1, version="2.0", oss_key="software/new.zip")
@@ -231,12 +231,12 @@ def test_software_list_upload_get_add_delete(monkeypatch):
 
     db = MagicMock()
     db.query.return_value = _chain(items=[sw], count=1)
-    result = asyncio.run(software.list_software(page=1, size=20, keyword="Tool", db=db))
+    result = asyncio.run(software.list_software(page=1, size=20, keyword="Tool", db=db, viewer=_user()))
     assert result["data"]["total"] == 1
 
     db = MagicMock()
     db.query.return_value = _chain(first=sw)
-    assert asyncio.run(software.get_software(1, db=db))["data"]["id"] == 1
+    assert asyncio.run(software.get_software(1, db=db, viewer=_user()))["data"]["id"] == 1
 
     monkeypatch.setattr(software.storage_service, "upload_file", lambda c, n, p, t: {"oss_key": "software/x.zip", "filename": "x.zip", "file_size": 100, "file_hash": "abc"})
     file = MagicMock()
@@ -562,13 +562,15 @@ def test_geo_distribution_endpoint_windows_per_range(monkeypatch):
     db = MagicMock()
 
     asyncio.run(stats.geo_distribution_stats(range="month", db=db, admin=_user()))
-    expected_month = stats._month_range_utc()
-    assert captured[-1] == expected_month
+    expected_month = stats._last_30_days_range_utc()
+    assert captured[-1][0] == expected_month[0]
+    assert abs((captured[-1][1] - expected_month[1]).total_seconds()) < 5
 
     asyncio.run(stats.geo_distribution_stats(range="day", db=db, admin=_user()))
     expected_day = stats._today_range_utc()
     assert captured[-1] == expected_day
     assert captured[-1] != expected_month
+    assert expected_month[0] < expected_day[0] < expected_month[1] <= expected_day[1]
 
     before = datetime.utcnow()
     asyncio.run(stats.geo_distribution_stats(range="year", db=db, admin=_user()))

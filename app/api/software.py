@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.dependencies import get_db, require_admin, require_member
+from app.core.dependencies import get_current_user, get_db, require_admin, require_member
 from app.core.utils import iso_utc, ok, oss_key_for_upload
 from app.models.download_log import DownloadLog
 from app.models.resource_tag import ResourceTag
@@ -69,8 +69,10 @@ async def list_software(
     size: int = Query(20, ge=1, le=100),
     sort_by: str = Query("upload_time", regex="^(file_size|upload_time|download_count|brand)$"),
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    viewer: User | None = Depends(get_current_user),
 ):
+    public_view = viewer is None or viewer.role != "admin"
     if expand_versions:
         # Version-grained listing: one row per SoftwareVersion. Publish state
         # and download counts come from the version, not the parent software.
@@ -78,7 +80,7 @@ async def list_software(
         vq = db.query(SoftwareVersion).join(Software, SoftwareVersion.software_id == Software.id).filter(
             Software.is_active.is_(True), SoftwareVersion.is_active.is_(True),
         )
-        if published_only:
+        if published_only or public_view:
             vq = vq.filter(SoftwareVersion.is_published == True)  # noqa: E712
         if submission_status:
             vq = vq.filter(Software.submission_status == submission_status)
@@ -142,7 +144,7 @@ async def list_software(
         return ok({"items": items, "total": total, "page": page, "size": size})
 
     q = db.query(Software).filter(Software.is_active.is_(True))
-    if published_only:
+    if published_only or public_view:
         # When the caller doesn't want expansion, treat the software as
         # published if any of its versions is published — keeps the legacy
         # collapsed view useful even though publish lives on the version now.
@@ -492,17 +494,27 @@ async def categories(db: Session = Depends(get_db)):
 
 
 @router.get("/{software_id}")
-async def get_software(software_id: int, db: Session = Depends(get_db)):
+async def get_software(software_id: int, db: Session = Depends(get_db), viewer: User | None = Depends(get_current_user)):
     sw = db.query(Software).filter(Software.id == software_id).first()
     if not sw: raise HTTPException(404, "软件不存在")
-    return ok(sw.to_dict(include_versions=True))
+    can_review = viewer and (viewer.role == "admin" or sw.submitted_by == viewer.id)
+    if not sw.is_published and not can_review:
+        raise HTTPException(404, "软件不存在")
+    data = sw.to_dict(include_versions=True)
+    if not can_review:
+        data["versions"] = [v.to_dict() for v in sw.versions if v.is_published]
+    return ok(data)
 
 
 @router.get("/{software_id}/download-link")
 async def download_latest(software_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(require_member)):
     sw = db.query(Software).filter(Software.id == software_id).first()
     if not sw: raise HTTPException(404, "软件不存在")
-    version = db.query(SoftwareVersion).filter(SoftwareVersion.software_id == software_id, SoftwareVersion.is_active.is_(True)).order_by(SoftwareVersion.upload_time.desc()).first()
+    can_review = user.role == "admin" or sw.submitted_by == user.id
+    version_query = db.query(SoftwareVersion).filter(SoftwareVersion.software_id == software_id, SoftwareVersion.is_active.is_(True))
+    if not can_review:
+        version_query = version_query.filter(SoftwareVersion.is_published.is_(True))
+    version = version_query.order_by(SoftwareVersion.upload_time.desc()).first()
     if not version: raise HTTPException(404, "软件版本不存在")
     return _download_version(db, sw, version, user, request)
 
@@ -511,7 +523,8 @@ async def download_latest(software_id: int, request: Request, db: Session = Depe
 async def download_version(software_id: int, version_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(require_member)):
     sw = db.query(Software).filter(Software.id == software_id).first()
     version = db.query(SoftwareVersion).filter(SoftwareVersion.id == version_id, SoftwareVersion.software_id == software_id).first()
-    if not sw or not version: raise HTTPException(404, "软件版本不存在")
+    if not sw or not version or (not version.is_published and user.role != "admin" and sw.submitted_by != user.id):
+        raise HTTPException(404, "软件版本不存在")
     return _download_version(db, sw, version, user, request)
 
 
