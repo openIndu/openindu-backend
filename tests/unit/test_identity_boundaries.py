@@ -5,7 +5,7 @@ from pathlib import Path
 
 APP = Path(__file__).resolve().parents[2] / "app"
 
-CONTEXTS = ("identity", "membership", "catalog", "analytics")
+CONTEXTS = ("identity", "membership", "catalog", "analytics", "knowledge")
 PROHIBITED = ("app.api", "app.core", "app.models", "app.services", "fastapi", "sqlalchemy")
 PROHIBITED += tuple(f"app.{context}.infrastructure" for context in CONTEXTS)
 

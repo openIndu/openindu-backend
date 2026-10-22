@@ -10,7 +10,7 @@ decisions out of HTTP handlers does not complete a migration.
 | Membership | applications, review, role transition and notification | `api/member_applications.py`, `api/users.py` | migrated: apply/review rules, approval SMS notification, account administration (role change, blacklist, force logout, soft delete); both API files are thin adapters |
 | Catalog | software, documents, tags, publication and downloads | `api/software.py`, `api/documents.py`, `api/tags.py` | done: software submissions, direct-to-OSS pipeline, downloads, publishing, documents and tags migrated (`app/catalog/`) |
 | Analytics | visits and statistics | `api/visits.py`, `api/stats.py`, `services/geo_service.py` | migrated: visit tracking, IP geolocation (`services/geo_service.py` removed), reporting windows and dashboard SQL read models moved into `app/analytics/`; both API files are thin adapters |
-| Knowledge | chat, retrieval and MCP tools | `api/chat.py`, `api/chat_sessions.py`, `mcp/` | legacy |
+| Knowledge | chat, retrieval and MCP tools | `api/chat.py`, `api/chat_sessions.py`, `mcp/` | migrated: consultation flow (quota, query rewriting, brand-scoped retrieval with retry, SSE answering), session CRUD and feedback, Milvus search and LLM gateway (`services/chat_service.py` and `services/milvus_service.py` removed); API files and `mcp/` are thin adapters |
 
 The migrated contexts follow the same layout (`app/identity/`, `app/membership/`):
 

@@ -2,6 +2,7 @@
 
 from app.domain.auth import BizCode
 from app.domain.catalog import CatalogCode
+from app.domain.knowledge import KnowledgeCode
 from app.domain.membership import MemberCode
 
 
@@ -84,6 +85,13 @@ class ErrorCode:
         CatalogCode.TAG_LABEL_REQUIRED: "label_zh 不能为空",
         CatalogCode.TAG_SERIES_PARENT_REQUIRED: "series 类型必须提供 parent_value 和 brand_value",
         CatalogCode.TAG_IN_USE: "该标签仍有文档或软件在使用，无法删除",
+        KnowledgeCode.EMPTY_QUESTION: "问题不能为空",
+        KnowledgeCode.QUOTA_EXCEEDED: "今日咨询次数已用完（{limit}次/天）",
+        KnowledgeCode.RETRIEVAL_UNAVAILABLE: "知识库暂不可用，请稍后再试",
+        KnowledgeCode.SESSION_NOT_FOUND: "会话不存在",
+        KnowledgeCode.TITLE_EMPTY: "标题不能为空",
+        KnowledgeCode.MESSAGE_NOT_FOUND: "消息不存在",
+        KnowledgeCode.FEEDBACK_INVALID: "value must be 1 or -1",
     }
     _statuses = {
         BizCode.AUTH_INVALID_PHONE: 400,
@@ -151,18 +159,25 @@ class ErrorCode:
         CatalogCode.TAG_LABEL_REQUIRED: 400,
         CatalogCode.TAG_SERIES_PARENT_REQUIRED: 400,
         CatalogCode.TAG_IN_USE: 400,
+        KnowledgeCode.EMPTY_QUESTION: 400,
+        KnowledgeCode.QUOTA_EXCEEDED: 429,
+        KnowledgeCode.RETRIEVAL_UNAVAILABLE: 503,
+        KnowledgeCode.SESSION_NOT_FOUND: 404,
+        KnowledgeCode.TITLE_EMPTY: 400,
+        KnowledgeCode.MESSAGE_NOT_FOUND: 404,
+        KnowledgeCode.FEEDBACK_INVALID: 400,
     }
 
     @classmethod
-    def message(cls, code: BizCode | MemberCode | CatalogCode, **params: object) -> str:
+    def message(cls, code: BizCode | MemberCode | CatalogCode | KnowledgeCode, **params: object) -> str:
         return cls._messages[code].format(**params)
 
     @classmethod
-    def status(cls, code: BizCode | MemberCode | CatalogCode) -> int:
+    def status(cls, code: BizCode | MemberCode | CatalogCode | KnowledgeCode) -> int:
         return cls._statuses[code]
 
     @classmethod
-    def error_body(cls, code: BizCode | MemberCode | CatalogCode, **params: object) -> dict:
+    def error_body(cls, code: BizCode | MemberCode | CatalogCode | KnowledgeCode, **params: object) -> dict:
         status = cls.status(code)
         body = {"code": status, "biz_code": code.value, "detail": cls.message(code, **params)}
         if params:
