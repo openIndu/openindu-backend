@@ -91,12 +91,23 @@ class MemberMessages:
         MemberCode.APPLICATION_REJECTED: "已驳回",
         MemberCode.APPROVED_NOTIFIED: "已通过，用户已升级为会员，短信通知已发送",
         MemberCode.APPROVED_UNNOTIFIED: "已通过，用户已升级为会员，短信通知未发出（详见服务日志）",
+        MemberCode.INVALID_ROLE: "无效角色",
+        MemberCode.USER_ALREADY_DELETED: "用户已删除",
+        MemberCode.CANNOT_DELETE_SELF: "不能删除当前登录的管理员账号",
+        MemberCode.ROLE_UPDATED: "操作成功",
+        MemberCode.USER_BLACKLISTED: "已拉黑",
+        MemberCode.USER_UNBLACKLISTED: "已解除拉黑",
+        MemberCode.USER_LOGGED_OUT: "已强制登出",
+        MemberCode.USER_DELETED: "已删除",
     }
     _statuses = {
         MemberCode.ALREADY_MEMBER: 400,
         MemberCode.APPLICATION_PENDING: 400,
         MemberCode.USER_NOT_FOUND: 404,
         MemberCode.APPLICATION_NOT_PENDING: 400,
+        MemberCode.INVALID_ROLE: 400,
+        MemberCode.USER_ALREADY_DELETED: 409,
+        MemberCode.CANNOT_DELETE_SELF: 400,
     }
 
     @classmethod
