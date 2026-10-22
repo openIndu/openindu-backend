@@ -152,6 +152,8 @@ class TestSoftwareSubmissions:
         items = resp.json()["data"]["items"]
         assert items and all(i["id"] == pending_id for i in items if i["id"] == pending_id)
         assert any(i["id"] == pending_id for i in items)
+        # Expanded version rows must carry the review state for the admin UI.
+        assert all(i["submission_status"] == "pending" for i in items)
         resp = admin_client.get("/api/v1/software", params={"submission_status": "pending", "expand_versions": "false"})
         assert all(i["id"] != 0 and i["submission_status"] == "pending" for i in resp.json()["data"]["items"])
         resp = admin_client.get("/api/v1/software", params={"submission_status": "rejected"})

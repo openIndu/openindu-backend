@@ -135,6 +135,8 @@ async def list_software(
                 "download_count": v.download_count,
                 "version_download_count": v.download_count,
                 "is_published": v.is_published,
+                "submission_status": s.submission_status,
+                "rejected_reason": s.rejected_reason,
                 "is_latest_version": v.version == s.latest_version,
             })
         return ok({"items": items, "total": total, "page": page, "size": size})
