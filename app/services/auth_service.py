@@ -124,7 +124,7 @@ class AuthService:
         import base64
         import io
 
-        from PIL import Image, ImageDraw, ImageFilter
+        from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
         piece_w = SLIDER_PIECE + SLIDER_KNOB
         # Puzzle-piece silhouette: square body with an outward knob on top and
@@ -145,6 +145,9 @@ class AuthService:
             360,
             fill=0,
         )
+        # A 2px ring around the silhouette marks edges on both the notch and
+        # the sprite; subtracting the mask itself leaves just that ring.
+        outline_mask = ImageChops.subtract(mask.filter(ImageFilter.MaxFilter(5)), mask)
 
         # Procedural background: vertical gradient plus translucent shapes, so
         # no image assets ship with the app and every challenge looks different.
@@ -162,25 +165,32 @@ class AuthService:
             radius = random.randint(8, 30)
             shade = (255, 255, 255, 26) if random.random() < 0.5 else (0, 0, 0, 22)
             shape_draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=shade)
-        background = background.filter(ImageFilter.GaussianBlur(1))
+        background = background.filter(ImageFilter.GaussianBlur(0.8)).convert("RGBA")
 
-        # Cut the notch out of the background: darken it and mark the edge in
-        # white so the drop target is clearly visible.
-        edge = mask.filter(ImageFilter.MaxFilter(5))
+        # The piece must carry the *untouched* background pixels, so crop it
+        # before the notch is carved, then stack shadow + body + white outline.
+        body = background.crop((x, y, x + piece_w, y + piece_w)).convert("RGBA")
+        body.putalpha(mask)
+        sprite = Image.new("RGBA", (piece_w, piece_w), (0, 0, 0, 0))
+        shadow_alpha = mask.filter(ImageFilter.GaussianBlur(2)).point(lambda v: int(v * 0.45))
+        shadow_layer = Image.new("RGBA", (piece_w, piece_w), (0, 0, 0, 255))
+        shadow_layer.putalpha(shadow_alpha)
+        sprite.alpha_composite(shadow_layer, dest=(1, 2))
+        sprite.alpha_composite(body)
+        outline_layer = Image.new("RGBA", (piece_w, piece_w), (255, 255, 255, 255))
+        outline_layer.putalpha(outline_mask.point(lambda v: 230 if v else 0))
+        sprite.alpha_composite(outline_layer)
+
+        # Carve the notch: darken it and mark the edge in white so the drop
+        # target is clearly visible against the busy background.
         overlay = Image.new("RGBA", background.size, (0, 0, 0, 0))
-        hole = Image.new("RGBA", (piece_w, piece_w), (15, 18, 24, 150))
-        overlay.paste(hole, (x, y), mask)
-        ring = Image.new("RGBA", (piece_w, piece_w), (255, 255, 255, 170))
-        edge_only = edge.point(lambda v: 255 if v > 0 else 0)
-        ring_mask = Image.new("L", (piece_w, piece_w), 0)
-        ring_mask.paste(edge_only, (0, 0))
-        ring_mask.paste(mask, (0, 0))
-        overlay.paste(ring, (x, y), ring_mask)
-        background = Image.alpha_composite(background.convert("RGBA"), overlay)
-
-        # The piece sprite is the exact pixels the notch removed.
-        sprite = background.crop((x, y, x + piece_w, y + piece_w))
-        sprite.putalpha(mask)
+        hole_layer = Image.new("RGBA", (piece_w, piece_w), (12, 14, 20, 255))
+        hole_layer.putalpha(mask.point(lambda v: 160 if v else 0))
+        overlay.alpha_composite(hole_layer, dest=(x, y))
+        ring_layer = Image.new("RGBA", (piece_w, piece_w), (255, 255, 255, 255))
+        ring_layer.putalpha(outline_mask.point(lambda v: 200 if v else 0))
+        overlay.alpha_composite(ring_layer, dest=(x, y))
+        background = Image.alpha_composite(background, overlay)
 
         def to_uri(image: Image.Image) -> str:
             buffer = io.BytesIO()
