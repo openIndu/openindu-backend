@@ -193,35 +193,58 @@ def test_sw_series_tag_type_is_rejected():
 
 @pytest.mark.parametrize("filename,expected", [("setup.exe", ".exe"), ("archive", "")])
 def test_software_ext(filename, expected):
-    from app.api.software import _ext
+    from app.catalog.domain.rules import file_ext
 
-    assert _ext(filename) == expected
+    assert file_ext(filename) == expected
 
 
 def test_software_download_and_delete(monkeypatch):
+    from datetime import datetime
+
     from app.api import software
+    from app.catalog.application.downloads import IssueSoftwareDownloadLink
+    from app.services.storage_service import storage_service as storage
 
     assert software.ok()["data"] == {}
     assert software._ip(_Request("2.2.2.2, 3.3.3.3")) == "2.2.2.2"
 
-    sw = SimpleNamespace(id=3, original_name="tool.zip", download_count=0)
-    ver = SimpleNamespace(oss_key="software/tool.zip", version="1.0", download_count=0)
-    db = MagicMock()
-    db.query.return_value = _chain(count=0)
-    monkeypatch.setattr(software.storage_service, "get_download_url", lambda key: {"url": f"/files/{key}", "expires_in": 60})
-    result = software._download_version(db, sw, ver, _user("member"), _Request())
-    assert result["data"]["version"] == "1.0"
+    sw = SimpleNamespace(id=3, original_name="tool.zip", download_count=0, submitted_by=None)
+    ver = SimpleNamespace(oss_key="software/tool.zip", version="1.0", download_count=0, is_published=True)
+
+    class _Catalog:
+        def find(self, software_id):
+            return sw
+
+        def latest_active_version(self, software_id, published_only):
+            return ver
+
+    class _Ledger:
+        def count_today(self, *a):
+            return 0
+
+        def record_download(self, software, version, user_id, ip):
+            software.download_count += 1
+            version.download_count += 1
+
+    class _Signer:
+        def download_url(self, key):
+            return {"url": f"/files/{key}", "expires_in": 60}
+
+    use_case = IssueSoftwareDownloadLink(_Catalog(), _Ledger(), _Signer(), now=lambda: datetime(2026, 10, 22), daily_limit=5)
+    result = use_case.execute_latest(3, _user("member"), "9.9.9.9")
+    assert result["version"] == "1.0"
     assert sw.download_count == 1
     assert ver.download_count == 1
 
     db = MagicMock()
     db.query.return_value = _chain(first=ver)
-    monkeypatch.setattr(software.storage_service, "delete_file", lambda key: None)
+    monkeypatch.setattr(storage, "delete_file", lambda key: None)
     assert asyncio.run(software.delete_version(3, 4, db, _user()))["message"] == "删除成功"
 
 
 def test_software_list_upload_get_add_delete(monkeypatch):
     from app.api import software
+    from app.services.storage_service import storage_service
 
     sw = SimpleNamespace(id=1, original_name="Tool.zip", brand="siemens", latest_version="1.0", download_count=0, is_published=True)
     sw.to_dict = lambda include_versions=False: {"id": sw.id}
@@ -238,7 +261,7 @@ def test_software_list_upload_get_add_delete(monkeypatch):
     db.query.return_value = _chain(first=sw)
     assert asyncio.run(software.get_software(1, db=db, viewer=_user()))["data"]["id"] == 1
 
-    monkeypatch.setattr(software.storage_service, "upload_file", lambda c, n, p, t: {"oss_key": "software/x.zip", "filename": "x.zip", "file_size": 100, "file_hash": "abc"})
+    monkeypatch.setattr(storage_service, "upload_file", lambda c, n, p, t: {"oss_key": "software/x.zip", "filename": "x.zip", "file_size": 100, "file_hash": "abc"})
     file = MagicMock()
     file.filename = "test.zip"
     file.size = 100
@@ -262,7 +285,7 @@ def test_software_list_upload_get_add_delete(monkeypatch):
 
     db = MagicMock()
     db.query.return_value = _chain(first=sw)
-    monkeypatch.setattr(software.storage_service, "delete_file", lambda key: None)
+    monkeypatch.setattr(storage_service, "delete_file", lambda key: None)
     assert asyncio.run(software.delete_software(1, db=db, admin=_user()))["message"] == "删除成功"
 
 
@@ -911,7 +934,8 @@ def _direct_upload_token(claims_extra: dict) -> str:
 
 def test_software_direct_upload_init_local(monkeypatch):
     from app.api import software
-    monkeypatch.setattr(software.storage_service, "_backend", "local")
+    from app.services.storage_service import storage_service as _ss
+    monkeypatch.setattr(_ss, "_backend", "local")
     db = MagicMock()
     db.query.side_effect = [_chain(items=[SimpleNamespace(value="siemens")]),
                             _chain(items=[SimpleNamespace(value="utility")])]
@@ -923,8 +947,10 @@ def test_software_direct_upload_init_local(monkeypatch):
 
 def test_software_direct_upload_init_multipart(monkeypatch):
     from app.api import software
+    from app.core.config import settings
     from app.services import oss_service as oss_mod
-    monkeypatch.setattr(software.storage_service, "_backend", "s3")
+    from app.services.storage_service import storage_service as _ss
+    monkeypatch.setattr(_ss, "_backend", "s3")
     monkeypatch.setattr(oss_mod.oss_service, "create_multipart_upload", lambda *a, **k: "uid-1")
     monkeypatch.setattr(oss_mod.oss_service, "presign_part_upload",
                         lambda key, uid, pn, exp: f"https://oss/part{pn}")
@@ -933,7 +959,7 @@ def test_software_direct_upload_init_multipart(monkeypatch):
                             _chain(items=[SimpleNamespace(value="utility")])]
     body = software.UploadInitBody(filename="t.zip", brand="siemens", category="utility",
                                    version="1.0", content_type="application/zip",
-                                   size=software.settings.UPLOAD_PART_SIZE_MB * 1024 * 1024 + 1)
+                                   size=settings.UPLOAD_PART_SIZE_MB * 1024 * 1024 + 1)
     result = asyncio.run(software.upload_init(body, db=db, user=_user()))
     data = result["data"]
     assert data["mode"] == "multipart"
@@ -951,7 +977,8 @@ def test_software_direct_upload_init_multipart(monkeypatch):
 def test_software_direct_upload_init_single(monkeypatch):
     from app.api import software
     from app.services import oss_service as oss_mod
-    monkeypatch.setattr(software.storage_service, "_backend", "s3")
+    from app.services.storage_service import storage_service as _ss
+    monkeypatch.setattr(_ss, "_backend", "s3")
     monkeypatch.setattr(oss_mod.oss_service, "presign_single_put", lambda *a, **k: "https://oss/single")
     db = MagicMock()
     db.query.side_effect = [_chain(items=[SimpleNamespace(value="siemens")]),
@@ -1003,7 +1030,8 @@ def test_software_direct_upload_complete_single_missing(monkeypatch):
     monkeypatch.setattr(_ss, "_backend", "s3")
     monkeypatch.setattr(oss_mod.oss_service, "head_object", lambda *a, **k: False)
     token = _direct_upload_token({"mode": "single"})
-    with pytest.raises(HTTPException):
+    from app.domain.catalog import CatalogError
+    with pytest.raises(CatalogError):
         asyncio.run(software.upload_complete(software.UploadCompleteBody(token=token), db=MagicMock(), user=_user()))
 
 
@@ -1021,5 +1049,6 @@ def test_software_direct_upload_abort(monkeypatch):
 
 def test_software_direct_upload_bad_token():
     from app.api import software
-    with pytest.raises(HTTPException):
+    from app.domain.catalog import CatalogError
+    with pytest.raises(CatalogError):
         asyncio.run(software.upload_complete(software.UploadCompleteBody(token="bad"), db=MagicMock(), user=_user()))

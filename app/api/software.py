@@ -1,28 +1,18 @@
-"""Software package and version API."""
-import math
-from datetime import UTC, date, datetime, timedelta
-
+"""Software package and version API — thin adapter over the catalog context."""
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from jose import JWTError, jwt
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.catalog.application.admin import VersionCriteria
+from app.catalog.provider import catalog
 from app.core.dependencies import get_current_user, get_db, require_admin, require_member
-from app.core.utils import iso_utc, ok, oss_key_for_upload
-from app.models.download_log import DownloadLog
+from app.core.utils import iso_utc, ok
 from app.models.resource_tag import ResourceTag
 from app.models.software import Software, SoftwareVersion
 from app.models.user import User
-from app.services.storage_service import storage_service
 
 router = APIRouter(prefix="/software")
-ALLOWED_EXTS = {".zip", ".exe", ".msi", ".rar", ".7z", ".pkg", ".package"}
-
-
-def _ext(filename: str) -> str:
-    return "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
 
 def _ip(request: Request):
@@ -32,29 +22,6 @@ def _ip(request: Request):
 
 def _valid_values(db: Session, tag_type: str) -> list[str]:
     return [t.value for t in db.query(ResourceTag).filter(ResourceTag.type == tag_type, ResourceTag.is_active == True).all()]  # noqa: E712
-
-
-def _file_size(file: UploadFile) -> int:
-    """Return upload size without loading the file into memory."""
-    if file.size is not None:
-        return file.size
-    stream = file.file
-    pos = stream.tell()
-    stream.seek(0, 2)
-    size = stream.tell()
-    stream.seek(pos)
-    return size
-
-
-def _check_daily_limit(db: Session, user: User):
-    # Admins bypass the 5/day cap — they curate the catalog and shouldn't be
-    # locked out while validating uploads or fielding member tickets.
-    if user.role == "admin":
-        return
-    today_start = datetime.combine(date.today(), datetime.min.time())
-    count = db.query(DownloadLog).filter(DownloadLog.user_id == user.id, DownloadLog.resource_type == "software", DownloadLog.created_at >= today_start).count()
-    if count >= settings.DOWNLOAD_DAILY_LIMIT:
-        raise HTTPException(429, "今日软件下载次数已用完（5次/天）")
 
 
 @router.get("")
@@ -76,7 +43,6 @@ async def list_software(
     if expand_versions:
         # Version-grained listing: one row per SoftwareVersion. Publish state
         # and download counts come from the version, not the parent software.
-        from app.models.software import SoftwareVersion  # local import keeps the non-expand path lean
         vq = db.query(SoftwareVersion).join(Software, SoftwareVersion.software_id == Software.id).filter(
             Software.is_active.is_(True), SoftwareVersion.is_active.is_(True),
         )
@@ -148,7 +114,6 @@ async def list_software(
         # When the caller doesn't want expansion, treat the software as
         # published if any of its versions is published — keeps the legacy
         # collapsed view useful even though publish lives on the version now.
-        from app.models.software import SoftwareVersion
         published_ids = db.query(SoftwareVersion.software_id).filter(SoftwareVersion.is_published == True).distinct()  # noqa: E712
         q = q.filter(Software.id.in_(published_ids))
     if submission_status:
@@ -164,35 +129,13 @@ async def list_software(
 
 @router.post("/upload")
 async def upload_software(file: UploadFile = File(...), brand: str = Form(...), category: str = Form(...), version: str = Form(...), description: str = Form(""), db: Session = Depends(get_db), user: User = Depends(require_member)):
-    # 1. 所有前置校验 — 失败时不产生副作用
-    brands = _valid_values(db, "sw_brand")
-    categories = _valid_values(db, "sw_category")
-    if brand not in brands: raise HTTPException(400, "无效品牌")
-    if category not in categories: raise HTTPException(400, "无效分类")
-    if not file.filename or _ext(file.filename) not in ALLOWED_EXTS: raise HTTPException(415, "不支持的软件包格式")
-    if _file_size(file) > settings.SOFTWARE_MAX_SIZE_GB * 1024 * 1024 * 1024: raise HTTPException(413, "文件大小超过限制")
-
-    # 2. 先上传文件到存储 — 流式 + 线程池卸载，避免阻塞事件循环
-    meta = await run_in_threadpool(storage_service.upload_file, file.file, file.filename, f"{settings.OSS_SOFTWARE_PREFIX}/{brand}", file.content_type or "application/octet-stream")
-
-    # 3. 然后写入 DB（两条记录）— DB 失败时删除已上传的文件
-    # 会员投稿进入待审核（对 portal 不可见）；管理员保持历史行为直接可见。
-    is_admin = user.role == "admin"
-    sw = Software(filename=meta["filename"], original_name=file.filename, brand=brand, category=category, latest_version=version, description=description,
-                  submitted_by=None if is_admin else user.id,
-                  submission_status="published" if is_admin else "pending")
-    try:
-        db.add(sw)
-        db.flush()
-        db.add(SoftwareVersion(software_id=sw.id, version=version, original_name=file.filename, file_size=meta["file_size"], file_hash=meta["file_hash"], oss_key=meta["oss_key"]))
-        db.commit()
-        db.refresh(sw)
-    except Exception:
-        # 回滚：删除已存在的文件，避免出现 OSS 上的幽灵文件
-        await run_in_threadpool(storage_service.delete_file, meta["oss_key"])
-        raise
-
-    return ok(sw.to_dict(include_versions=True), "上传成功" if is_admin else "投稿成功，等待管理员审核")
+    ctx = catalog(db)
+    sw = await run_in_threadpool(
+        ctx.submit_package.execute,
+        file.file, file.filename, file.content_type, brand, category, version, description, user,
+        size_bytes=getattr(file, "size", None),
+    )
+    return ok(sw.to_dict(include_versions=True), "上传成功" if sw.submission_status == "published" else "投稿成功，等待管理员审核")
 
 
 # ---------------------------------------------------------------------------
@@ -203,8 +146,6 @@ async def upload_software(file: UploadFile = File(...), brand: str = Form(...), 
 # afterwards — no large body passes through FastAPI/nginx, so there is no
 # event-loop blocking, no memory pressure, and no nginx body/timeout limits.
 # ---------------------------------------------------------------------------
-
-UPLOAD_TOKEN_EXPIRE_HOURS = 2
 
 
 class UploadInitBody(BaseModel):
@@ -233,174 +174,38 @@ class UploadAbortBody(BaseModel):
     token: str
 
 
-def _decode_upload_token(token: str) -> dict:
-    try:
-        return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-    except JWTError as exc:
-        raise HTTPException(400, f"无效或过期的上传凭证: {exc}")
-
-
 @router.post("/upload/init")
 async def upload_init(body: UploadInitBody, db: Session = Depends(get_db), user: User = Depends(require_member)):
-    # 会员只能新建投稿，不能往别人（或自己）已有的软件条目里追加版本。
-    if body.software_id and user.role != "admin":
-        raise HTTPException(403, "会员投稿请新建软件条目，不能为已有软件添加版本")
-    # 1. 校验 — 失败时不产生任何 OSS 副作用
-    if body.software_id:
-        existing_sw = db.query(Software).filter(Software.id == body.software_id).first()
-        if not existing_sw: raise HTTPException(400, "软件不存在")
-        brand = existing_sw.brand
-        category = existing_sw.category
-    else:
-        brands = _valid_values(db, "sw_brand")
-        categories = _valid_values(db, "sw_category")
-        if body.brand not in brands: raise HTTPException(400, "无效品牌")
-        if body.category not in categories: raise HTTPException(400, "无效分类")
-        brand = body.brand
-        category = body.category
-    if not body.filename or _ext(body.filename) not in ALLOWED_EXTS: raise HTTPException(415, "不支持的软件包格式")
-    if body.size <= 0: raise HTTPException(400, "文件大小无效")
-    if body.size > settings.SOFTWARE_MAX_SIZE_GB * 1024 * 1024 * 1024: raise HTTPException(413, "文件大小超过限制")
-
-    # 本地存储后端没有 OSS 直传能力 — 回退到同步上传
-    if storage_service.is_local:
-        return ok({"mode": "sync"}, "使用同步上传")
-
-    # 2. 生成 oss_key 与 presigned URL — 原始文件名直接在 OSS 中可辨识
-    oss_key = oss_key_for_upload(body.filename, f"{settings.OSS_SOFTWARE_PREFIX}/{brand}")
-    part_size = settings.UPLOAD_PART_SIZE_MB * 1024 * 1024
-    expire = settings.UPLOAD_PRESIGN_EXPIRE_MINUTES
-
-    payload = {
-        "oss_key": oss_key,
-        "filename": body.filename,
-        "brand": brand,
-        "category": category,
-        "version": body.version,
-        "description": body.description,
-        "content_type": body.content_type,
-        "size": body.size,
-        "software_id": body.software_id,
-        # Submission metadata rides in the signed token so /upload/complete can
-        # stamp the entry without trusting any client-sent field there.
-        "is_admin": user.role == "admin",
-        "submitted_by": None if user.role == "admin" else user.id,
-        "exp": datetime.now(UTC) + timedelta(hours=UPLOAD_TOKEN_EXPIRE_HOURS),
-    }
-
-    if body.size > part_size:
-        # multipart
-        upload_id = await run_in_threadpool(storage_service._impl.create_multipart_upload, oss_key, body.content_type)
-        num_parts = math.ceil(body.size / part_size)
-        part_urls = [
-            await run_in_threadpool(storage_service._impl.presign_part_upload, oss_key, upload_id, i + 1, expire)
-            for i in range(num_parts)
-        ]
-        payload["mode"] = "multipart"
-        payload["upload_id"] = upload_id
-        token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
-        return ok({
-            "mode": "multipart", "token": token, "oss_key": oss_key,
-            "part_size": part_size, "part_urls": part_urls,
-            "expires_in": expire * 60,
-        }, "凭证已签发")
-
-    # single PUT
-    upload_url = await run_in_threadpool(storage_service._impl.presign_single_put, oss_key, body.content_type, expire)
-    payload["mode"] = "single"
-    token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
-    return ok({
-        "mode": "single", "token": token, "oss_key": oss_key,
-        "upload_url": upload_url, "expires_in": expire * 60,
-    }, "凭证已签发")
+    ctx = catalog(db)
+    payload = await run_in_threadpool(
+        ctx.plan_direct_upload.execute,
+        user,
+        filename=body.filename,
+        brand=body.brand,
+        category=body.category,
+        version=body.version,
+        description=body.description,
+        content_type=body.content_type,
+        size=body.size,
+        software_id=body.software_id,
+    )
+    if payload["mode"] == "sync":
+        return ok(payload, "使用同步上传")
+    return ok(payload, "凭证已签发")
 
 
 @router.post("/upload/complete")
 async def upload_complete(body: UploadCompleteBody, db: Session = Depends(get_db), user: User = Depends(require_member)):
-    claims = _decode_upload_token(body.token)
-    mode = claims.get("mode")
-    oss_key = claims["oss_key"]
-    is_admin = bool(claims.get("is_admin"))
-    submitted_by = claims.get("submitted_by")
-
-    if mode == "multipart":
-        upload_id = claims["upload_id"]
-        if not body.parts:
-            raise HTTPException(400, "缺少分片信息")
-        parts = [{"PartNumber": p.part_number, "ETag": p.etag} for p in sorted(body.parts, key=lambda x: x.part_number)]
-        try:
-            await run_in_threadpool(storage_service._impl.complete_multipart_upload, oss_key, upload_id, parts)
-        except Exception:
-            await run_in_threadpool(storage_service._impl.abort_multipart_upload, oss_key, upload_id)
-            raise HTTPException(500, "合并分片失败，已取消上传")
-    elif mode == "single":
-        exists = await run_in_threadpool(storage_service._impl.head_object, oss_key)
-        if not exists:
-            raise HTTPException(400, "文件未上传至 OSS")
-    else:
-        raise HTTPException(400, "无效的上传凭证")
-
-    # 写入 DB — 失败时清理已上传的文件
-    existing_id = claims.get("software_id")
-    if existing_id:
-        if not is_admin:
-            await run_in_threadpool(storage_service.delete_file, oss_key)
-            raise HTTPException(403, "会员投稿请新建软件条目，不能为已有软件添加版本")
-        sw = db.query(Software).filter(Software.id == existing_id).first()
-        if not sw:
-            await run_in_threadpool(storage_service.delete_file, oss_key)
-            raise HTTPException(400, "软件不存在")
-        # Check for duplicate version (same filename + brand)
-        existing_ver = db.query(SoftwareVersion).filter(SoftwareVersion.oss_key == oss_key).first()
-        if existing_ver:
-            await run_in_threadpool(storage_service.delete_file, oss_key)
-            raise HTTPException(409, "该版本文件已存在，请更换文件名或版本号后重试")
-        try:
-            db.add(SoftwareVersion(software_id=sw.id, version=claims["version"], original_name=claims["filename"],
-                                   file_size=claims["size"], file_hash=body.file_hash, oss_key=oss_key))
-            sw.latest_version = claims["version"]
-            db.commit()
-            db.refresh(sw)
-        except Exception:
-            db.rollback()
-            await run_in_threadpool(storage_service.delete_file, oss_key)
-            raise
-        return ok(sw.to_dict(include_versions=True), "版本已添加")
-
-    sw = Software(filename=oss_key.rsplit("/", 1)[-1], original_name=claims["filename"],
-                  brand=claims["brand"], category=claims["category"],
-                  latest_version=claims["version"], description=claims.get("description"),
-                  submitted_by=submitted_by,
-                  submission_status="published" if is_admin else "pending")
-    # Check for duplicate OSS key before insert
-    existing_ver = db.query(SoftwareVersion).filter(SoftwareVersion.oss_key == oss_key).first()
-    if existing_ver:
-        await run_in_threadpool(storage_service.delete_file, oss_key)
-        raise HTTPException(409, "该版本文件已存在，请更换文件名或版本号后重试")
-    try:
-        db.add(sw)
-        db.flush()
-        db.add(SoftwareVersion(software_id=sw.id, version=claims["version"], original_name=claims["filename"],
-                               file_size=claims["size"], file_hash=body.file_hash, oss_key=oss_key))
-        db.commit()
-        db.refresh(sw)
-    except Exception:
-        db.rollback()
-        await run_in_threadpool(storage_service.delete_file, oss_key)
-        raise
-
-    return ok(sw.to_dict(include_versions=True), "上传成功" if is_admin else "投稿成功，等待管理员审核")
+    ctx = catalog(db)
+    parts = [(p.part_number, p.etag) for p in body.parts] if body.parts else None
+    sw, message = await run_in_threadpool(ctx.complete_direct_upload.execute, body.token, parts, body.file_hash)
+    return ok(sw.to_dict(include_versions=True), message)
 
 
 @router.post("/upload/abort")
-async def upload_abort(body: UploadAbortBody, user: User = Depends(require_member)):
-    claims = _decode_upload_token(body.token)
-    mode = claims.get("mode")
-    oss_key = claims["oss_key"]
-    if mode == "multipart":
-        await run_in_threadpool(storage_service._impl.abort_multipart_upload, oss_key, claims["upload_id"])
-    elif mode == "single":
-        await run_in_threadpool(storage_service.delete_file, oss_key)
+async def upload_abort(body: UploadAbortBody, db: Session = Depends(get_db), user: User = Depends(require_member)):
+    ctx = catalog(db)
+    await run_in_threadpool(ctx.abort_direct_upload.execute, body.token)
     return ok(message="已取消")
 
 
@@ -443,13 +248,7 @@ async def my_software_submissions(db: Session = Depends(get_db), user: User = De
 
 @router.delete("/my-submissions/{software_id}")
 async def delete_my_software_submission(software_id: int, db: Session = Depends(get_db), user: User = Depends(require_member)):
-    # Ownership is enforced by submitted_by — another member's submission 404s.
-    sw = db.query(Software).filter(Software.id == software_id, Software.submitted_by == user.id).first()
-    if not sw: raise HTTPException(404, "投稿不存在")
-    for ver in sw.versions:
-        storage_service.delete_file(ver.oss_key)
-    db.delete(sw)
-    db.commit()
+    catalog(db).withdraw_submission.execute(software_id, user.id)
     return ok(message="删除成功")
 
 
@@ -461,26 +260,10 @@ class ReviewSubmissionBody(BaseModel):
 @router.patch("/{software_id}/review")
 async def review_software_submission(software_id: int, body: ReviewSubmissionBody, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """Admin review of a member submission: publish it, or reject it with a reason."""
-    sw = db.query(Software).filter(Software.id == software_id).first()
-    if not sw: raise HTTPException(404, "软件不存在")
+    sw, message = catalog(db).review_submission.execute(software_id, body.action, body.reason)
     if body.action == "publish":
-        for v in sw.versions:
-            v.is_published = True
-        sw.is_published = True
-        sw.submission_status = "published"
-        sw.rejected_reason = None
-        db.commit(); db.refresh(sw)
-        return ok(sw.to_dict(include_versions=True), "已发布")
-    if body.action == "reject":
-        if not (body.reason or "").strip():
-            raise HTTPException(400, "请填写驳回理由")
-        if sw.submission_status == "published" and sw.is_published:
-            raise HTTPException(400, "已发布内容不能驳回，请先取消发布")
-        sw.submission_status = "rejected"
-        sw.rejected_reason = body.reason.strip()
-        db.commit(); db.refresh(sw)
-        return ok(sw.to_dict(), "已驳回")
-    raise HTTPException(400, "无效的操作")
+        return ok(sw.to_dict(include_versions=True), message)
+    return ok(sw.to_dict(), message)
 
 
 @router.get("/brands/list")
@@ -508,53 +291,27 @@ async def get_software(software_id: int, db: Session = Depends(get_db), viewer: 
 
 @router.get("/{software_id}/download-link")
 async def download_latest(software_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(require_member)):
-    sw = db.query(Software).filter(Software.id == software_id).first()
-    if not sw: raise HTTPException(404, "软件不存在")
-    can_review = user.role == "admin" or sw.submitted_by == user.id
-    version_query = db.query(SoftwareVersion).filter(SoftwareVersion.software_id == software_id, SoftwareVersion.is_active.is_(True))
-    if not can_review:
-        version_query = version_query.filter(SoftwareVersion.is_published.is_(True))
-    version = version_query.order_by(SoftwareVersion.upload_time.desc()).first()
-    if not version: raise HTTPException(404, "软件版本不存在")
-    return _download_version(db, sw, version, user, request)
+    return ok(catalog(db).issue_download_link.execute_latest(software_id, user, _ip(request)))
 
 
 @router.get("/{software_id}/versions/{version_id}/download-link")
 async def download_version(software_id: int, version_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(require_member)):
-    sw = db.query(Software).filter(Software.id == software_id).first()
-    version = db.query(SoftwareVersion).filter(SoftwareVersion.id == version_id, SoftwareVersion.software_id == software_id).first()
-    if not sw or not version or (not version.is_published and user.role != "admin" and sw.submitted_by != user.id):
-        raise HTTPException(404, "软件版本不存在")
-    return _download_version(db, sw, version, user, request)
-
-
-def _download_version(db: Session, sw: Software, version: SoftwareVersion, user: User, request: Request):
-    _check_daily_limit(db, user)
-    sw.download_count = (sw.download_count or 0) + 1
-    version.download_count = (version.download_count or 0) + 1
-    db.add(DownloadLog(user_id=user.id, resource_type="software", resource_id=sw.id, ip_address=_ip(request)))
-    db.commit()
-    url = storage_service.get_download_url(version.oss_key)
-    return ok({"download_url": url["url"], "expires_in": url["expires_in"], "filename": sw.original_name, "version": version.version})
+    return ok(catalog(db).issue_download_link.execute_version(software_id, version_id, user, _ip(request)))
 
 
 @router.post("/{software_id}/versions")
 async def add_version(software_id: int, file: UploadFile = File(...), version: str = Form(...), db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    sw = db.query(Software).filter(Software.id == software_id).first()
-    if not sw: raise HTTPException(404, "软件不存在")
-    if not file.filename or _ext(file.filename) not in ALLOWED_EXTS: raise HTTPException(415, "不支持的软件包格式")
-    meta = await run_in_threadpool(storage_service.upload_file, file.file, file.filename, f"{settings.OSS_SOFTWARE_PREFIX}/{sw.brand}", file.content_type)
-    ver = SoftwareVersion(software_id=sw.id, version=version, original_name=file.filename, file_size=meta["file_size"], file_hash=meta["file_hash"], oss_key=meta["oss_key"])
-    sw.latest_version = version
-    db.add(ver); db.commit(); db.refresh(ver)
+    ctx = catalog(db)
+    ver = await run_in_threadpool(
+        ctx.add_version.execute,
+        software_id, file.file, file.filename, file.content_type, version,
+    )
     return ok(ver.to_dict(), "版本已添加")
 
 
 @router.delete("/{software_id}/versions/{version_id}")
 async def delete_version(software_id: int, version_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    ver = db.query(SoftwareVersion).filter(SoftwareVersion.id == version_id, SoftwareVersion.software_id == software_id).first()
-    if not ver: raise HTTPException(404, "版本不存在")
-    storage_service.delete_file(ver.oss_key); db.delete(ver); db.commit()
+    catalog(db).delete_version.execute(software_id, version_id)
     return ok(message="删除成功")
 
 
@@ -567,52 +324,14 @@ class UpdateSoftwareBody(BaseModel):
 
 @router.patch("/{software_id}")
 async def update_software(software_id: int, body: UpdateSoftwareBody, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    sw = db.query(Software).filter(Software.id == software_id).first()
-    if not sw: raise HTTPException(404, "软件不存在")
-    if body.brand is not None:
-        if body.brand not in _valid_values(db, "sw_brand"):
-            raise HTTPException(400, "无效品牌")
-        sw.brand = body.brand
-    if body.category is not None:
-        if body.category not in _valid_values(db, "sw_category"):
-            raise HTTPException(400, "无效分类")
-        sw.category = body.category
-    if body.original_name is not None:
-        if not body.original_name.strip():
-            raise HTTPException(400, "软件名不能为空")
-        sw.original_name = body.original_name.strip()
-    if body.description is not None:
-        sw.description = body.description
-    db.commit(); db.refresh(sw)
+    sw = catalog(db).update_entry.execute(
+        software_id,
+        original_name=body.original_name,
+        brand=body.brand,
+        category=body.category,
+        description=body.description,
+    )
     return ok(sw.to_dict(), "更新成功")
-
-
-@router.patch("/publish/bulk")
-async def bulk_publish_software(body: "BulkPublishSoftwareBody", db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    # Publish is per-version now. Callers pass version_ids (preferred) or the
-    # old ids[] (= software_ids; applies to ALL versions of those softwares).
-    vq = db.query(SoftwareVersion).join(Software, SoftwareVersion.software_id == Software.id)
-    if body.version_ids is not None:
-        if not body.version_ids:
-            raise HTTPException(400, "请选择要操作的版本")
-        vq = vq.filter(SoftwareVersion.id.in_(body.version_ids))
-    elif body.ids is not None:
-        if not body.ids:
-            raise HTTPException(400, "请选择要操作的软件")
-        vq = vq.filter(SoftwareVersion.software_id.in_(body.ids))
-    else:
-        if body.brand:
-            vq = vq.filter(Software.brand == body.brand)
-        if body.category:
-            vq = vq.filter(Software.category == body.category)
-        if body.keyword:
-            vq = vq.filter((SoftwareVersion.original_name.ilike(f"%{body.keyword}%")) | (Software.original_name.ilike(f"%{body.keyword}%")))
-    # Only flip rows whose state differs from the target.
-    rows = vq.filter(SoftwareVersion.is_published == (not body.publish)).all()
-    for v in rows:
-        v.is_published = body.publish
-    db.commit()
-    return ok({"count": len(rows), "publish": body.publish}, "发布成功" if body.publish else "取消发布成功")
 
 
 class BulkPublishSoftwareBody(BaseModel):
@@ -632,53 +351,28 @@ class BulkDeleteSoftwareBody(BaseModel):
     keyword: str | None = None
 
 
+@router.patch("/publish/bulk")
+async def bulk_publish_software(body: BulkPublishSoftwareBody, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    # Publish is per-version now. Callers pass version_ids (preferred) or the
+    # old ids[] (= software_ids; applies to ALL versions of those softwares).
+    criteria = VersionCriteria(
+        version_ids=body.version_ids, software_ids=body.ids,
+        brand=body.brand, category=body.category, keyword=body.keyword,
+    )
+    count = catalog(db).bulk_publish.execute(criteria, body.publish)
+    return ok({"count": count, "publish": body.publish}, "发布成功" if body.publish else "取消发布成功")
+
+
 @router.delete("/bulk")
 async def bulk_delete_software(body: BulkDeleteSoftwareBody, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """Bulk-delete software versions (and parent software if no versions remain)."""
-    deleted = 0
-
-    if body.version_ids is not None:
-        if not body.version_ids:
-            raise HTTPException(400, "请选择要删除的版本")
-        versions = db.query(SoftwareVersion).filter(SoftwareVersion.id.in_(body.version_ids)).all()
-    elif body.ids is not None:
-        if not body.ids:
-            raise HTTPException(400, "请选择要删除的软件")
-        versions = db.query(SoftwareVersion).filter(SoftwareVersion.software_id.in_(body.ids)).all()
-    else:
-        # Filter-based: delete ALL matching versions across all softwares
-        vq = db.query(SoftwareVersion).join(Software, SoftwareVersion.software_id == Software.id)
-        if body.brand:
-            vq = vq.filter(Software.brand == body.brand)
-        if body.category:
-            vq = vq.filter(Software.category == body.category)
-        if body.keyword:
-            vq = vq.filter(
-                (SoftwareVersion.original_name.ilike(f"%{body.keyword}%"))
-                | (Software.original_name.ilike(f"%{body.keyword}%"))
-            )
-        versions = vq.all()
-
-    if not versions:
+    criteria = VersionCriteria(
+        version_ids=body.version_ids, software_ids=body.ids,
+        brand=body.brand, category=body.category, keyword=body.keyword,
+    )
+    deleted = catalog(db).bulk_delete_versions.execute(criteria)
+    if deleted == 0:
         return ok({"count": 0}, "没有要删除的版本")
-
-    # Track which software_ids had versions deleted
-    software_ids = set[int]()
-    for ver in versions:
-        storage_service.delete_file(ver.oss_key)
-        software_ids.add(ver.software_id)
-        db.delete(ver)
-        deleted += 1
-
-    # Remove parent software that no longer has any version
-    for sid in software_ids:
-        remaining = db.query(SoftwareVersion).filter(SoftwareVersion.software_id == sid).count()
-        if remaining == 0:
-            sw = db.get(Software, sid)
-            if sw:
-                db.delete(sw)
-
-    db.commit()
     return ok({"count": deleted}, f"已删除 {deleted} 个版本")
 
 
@@ -690,33 +384,17 @@ async def toggle_publish(software_id: int, db: Session = Depends(get_db), admin:
     every version of the software to the opposite of whatever the majority
     is, then mirrors that state onto Software.is_published for compatibility.
     """
-    sw = db.query(Software).filter(Software.id == software_id).first()
-    if not sw: raise HTTPException(404, "软件不存在")
-    target = not sw.is_published
-    for v in sw.versions:
-        v.is_published = target
-    sw.is_published = target
-    db.commit(); db.refresh(sw)
+    sw = catalog(db).toggle_publish.execute(software_id)
     return ok(sw.to_dict(), "发布状态已更新")
 
 
 @router.patch("/{software_id}/versions/{version_id}/publish")
 async def toggle_version_publish(software_id: int, version_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    v = db.query(SoftwareVersion).filter(SoftwareVersion.id == version_id, SoftwareVersion.software_id == software_id).first()
-    if not v: raise HTTPException(404, "版本不存在")
-    v.is_published = not v.is_published
-    # Reflect "any version published" onto the parent so the legacy collapsed
-    # listing still shows the right status badge.
-    sw = v.software
-    sw.is_published = any(vv.is_published for vv in sw.versions)
-    db.commit(); db.refresh(v)
+    v = catalog(db).toggle_version_publish.execute(software_id, version_id)
     return ok(v.to_dict(), "发布状态已更新")
 
 
 @router.delete("/{software_id}")
 async def delete_software(software_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    sw = db.query(Software).filter(Software.id == software_id).first()
-    if not sw: raise HTTPException(404, "软件不存在")
-    for ver in sw.versions: storage_service.delete_file(ver.oss_key)
-    db.delete(sw); db.commit()
+    catalog(db).delete_software.execute(software_id)
     return ok(message="删除成功")
