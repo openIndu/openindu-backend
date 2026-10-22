@@ -3,10 +3,10 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
 from jose import jwt
 
 from app.core.config import settings
+from app.domain.auth import AuthError, BizCode
 from app.models.sms_code import SmsCode
 from app.models.token_blacklist import TokenBlacklist
 from app.models.user import User
@@ -50,15 +50,15 @@ class TestPhoneValidation:
         auth_service._validate_phone("13800138000")
 
     def test_invalid_phone_too_short(self):
-        with pytest.raises(HTTPException, match="手机号格式不正确"):
+        with pytest.raises(AuthError, match=BizCode.AUTH_INVALID_PHONE.value):
             auth_service._validate_phone("1380013800")
 
     def test_invalid_phone_letters(self):
-        with pytest.raises(HTTPException, match="手机号格式不正确"):
+        with pytest.raises(AuthError, match=BizCode.AUTH_INVALID_PHONE.value):
             auth_service._validate_phone("1380013800a")
 
     def test_invalid_phone_non_1_start(self):
-        with pytest.raises(HTTPException, match="手机号格式不正确"):
+        with pytest.raises(AuthError, match=BizCode.AUTH_INVALID_PHONE.value):
             auth_service._validate_phone("23800138000")
 
 
@@ -88,7 +88,7 @@ class TestSendCode:
         recent_code = make_sms_code(created_at=utcnow() - timedelta(seconds=30))
         mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = recent_code
 
-        with pytest.raises(HTTPException, match="验证码发送过于频繁"):
+        with pytest.raises(AuthError, match=BizCode.AUTH_SMS_RATE_LIMIT.value):
             auth_service.send_code(mock_db, "13800138000")
 
     def test_send_code_daily_limit(self):
@@ -97,7 +97,7 @@ class TestSendCode:
         mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = None
         mock_db.query.return_value.filter.return_value.count.return_value = 10
 
-        with pytest.raises(HTTPException, match="今日验证码发送次数已达上限"):
+        with pytest.raises(AuthError, match=BizCode.AUTH_SMS_DAILY_LIMIT.value):
             auth_service.send_code(mock_db, "13800138000")
 
 
@@ -216,7 +216,7 @@ class TestLogin:
         with patch.object(auth_service, "verify_code", return_value=True):
             mock_db.query.return_value.filter.return_value.first.return_value = None
 
-            with pytest.raises(HTTPException, match="用户不存在"):
+            with pytest.raises(AuthError, match=BizCode.AUTH_USER_NOT_FOUND.value):
                 auth_service.login(mock_db, "13800138000", "888888")
 
     def test_login_blacklisted(self):
@@ -227,7 +227,7 @@ class TestLogin:
             user = make_user(blacklisted=True)
             mock_db.query.return_value.filter.return_value.first.return_value = user
 
-            with pytest.raises(HTTPException, match="账号已被禁用"):
+            with pytest.raises(AuthError, match=BizCode.AUTH_ACCOUNT_DISABLED.value):
                 auth_service.login(mock_db, "13800138000", "888888")
 
 
@@ -260,8 +260,31 @@ class TestRegister:
             existing_user = make_user()
             mock_db.query.return_value.filter.return_value.first.return_value = existing_user
 
-            with pytest.raises(HTTPException, match="用户已存在"):
+            with pytest.raises(AuthError, match=BizCode.AUTH_USER_EXISTS.value):
                 auth_service.register(mock_db, "13800138000", "888888")
+
+
+class TestSignInOutcome:
+    def test_new_account_has_explicit_outcome(self):
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = None
+        db.query.return_value.scalar.return_value = 1
+        with patch.object(auth_service, "verify_code", return_value=True), patch.object(
+            auth_service, "create_token_pair", return_value={"access_token": "token"}
+        ):
+            account, outcome = auth_service.sign_in(db, "13800138000", "888888")
+        assert outcome == BizCode.AUTH_ACCOUNT_CREATED
+        assert account["is_new_user"] is True
+
+    def test_existing_account_has_login_outcome(self):
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = make_user()
+        with patch.object(auth_service, "verify_code", return_value=True), patch.object(
+            auth_service, "create_token_pair", return_value={"access_token": "token"}
+        ):
+            account, outcome = auth_service.sign_in(db, "13800138000", "888888")
+        assert outcome == BizCode.AUTH_LOGIN_SUCCESS
+        assert account["is_new_user"] is False
 
 
 class TestBlacklistToken:
@@ -317,7 +340,7 @@ class TestRefreshToken:
         user = make_user()
         tokens = auth_service.create_token_pair(user)
 
-        with pytest.raises(HTTPException, match="无效 refresh token"):
+        with pytest.raises(AuthError, match=BizCode.AUTH_REFRESH_INVALID.value):
             auth_service.refresh_token(mock_db, tokens["access_token"])
 
 
@@ -383,7 +406,7 @@ class TestSliderCaptcha:
         ticket = auth_service.verify_slider_challenge(db_session, result["challenge_id"], row.x)
         assert ticket["ticket"]
         assert ticket["expires_in"] == 300
-        with pytest.raises(HTTPException, match="滑块验证未通过"):
+        with pytest.raises(AuthError, match=BizCode.AUTH_SLIDER_FAILED.value):
             auth_service.verify_slider_challenge(db_session, result["challenge_id"], row.x)
 
     def test_verify_slider_rejects_out_of_tolerance(self, db_session):
@@ -395,7 +418,7 @@ class TestSliderCaptcha:
         row = db_session.query(SliderChallenge).filter(
             SliderChallenge.id == result["challenge_id"]).one()
 
-        with pytest.raises(HTTPException, match="滑块验证未通过"):
+        with pytest.raises(AuthError, match=BizCode.AUTH_SLIDER_FAILED.value):
             auth_service.verify_slider_challenge(
                 db_session, result["challenge_id"], row.x + SLIDER_TOLERANCE + 1)
         db_session.refresh(row)
@@ -403,7 +426,7 @@ class TestSliderCaptcha:
         assert row.verified is False
 
     def test_verify_slider_rejects_missing_challenge(self, db_session):
-        with pytest.raises(HTTPException, match="滑块验证未通过"):
+        with pytest.raises(AuthError, match=BizCode.AUTH_SLIDER_FAILED.value):
             auth_service.verify_slider_challenge(db_session, 999999, 100)
 
     def test_verify_slider_rejects_expired(self, db_session):
@@ -414,7 +437,7 @@ class TestSliderCaptcha:
         db_session.commit()
         db_session.refresh(challenge)
 
-        with pytest.raises(HTTPException, match="滑块验证未通过"):
+        with pytest.raises(AuthError, match=BizCode.AUTH_SLIDER_FAILED.value):
             auth_service.verify_slider_challenge(db_session, challenge.id, 200)
 
     def test_ticket_single_use_for_send_code(self, db_session):
@@ -429,7 +452,7 @@ class TestSliderCaptcha:
 
         auth_service.send_code(db_session, "13800138000", ticket)
         assert db_session.query(SmsCode).filter(SmsCode.phone == "13800138000").count() == 1
-        with pytest.raises(HTTPException, match="请先完成滑块验证"):
+        with pytest.raises(AuthError, match=BizCode.AUTH_SLIDER_REQUIRED.value):
             auth_service.send_code(db_session, "13800138001", ticket)
 
     def test_send_code_requires_slider_ticket_when_enforced(self, db_session, monkeypatch):
@@ -441,7 +464,7 @@ class TestSliderCaptcha:
         db_session.query(SmsCode).delete()
         db_session.commit()
 
-        with pytest.raises(HTTPException, match="请先完成滑块验证"):
+        with pytest.raises(AuthError, match=BizCode.AUTH_SLIDER_REQUIRED.value):
             auth_service.send_code(db_session, "13800138000")
         assert db_session.query(SmsCode).filter(SmsCode.phone == "13800138000").count() == 0
 

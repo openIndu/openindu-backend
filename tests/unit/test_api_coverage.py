@@ -752,10 +752,12 @@ def test_visit_tracking_rejects_unknown_event_type():
     assert exc.value.status_code == 400
 
 def test_auth_service_validate_phone(monkeypatch):
+    from app.domain.auth import AuthError, BizCode
     from app.services.auth_service import AuthService
 
-    with pytest.raises(HTTPException):
+    with pytest.raises(AuthError) as exc:
         AuthService._validate_phone("1234")
+    assert exc.value.code == BizCode.AUTH_INVALID_PHONE
 
     monkeypatch.setattr("app.services.auth_service.settings", SimpleNamespace(
         SMS_MOCK_ENABLED=True, SMS_MOCK_CODE="123456", JWT_SECRET_KEY="test", JWT_ALGORITHM="HS256",
@@ -831,8 +833,11 @@ def test_auth_service_login(monkeypatch):
     user.to_dict = lambda: {"id": 1}
     db.query.return_value = _chain(first=user)
 
-    with pytest.raises(HTTPException):
+    from app.domain.auth import AuthError, BizCode
+
+    with pytest.raises(AuthError) as exc:
         service.login(db, "13800138000", "wrong-code")
+    assert exc.value.code == BizCode.AUTH_INVALID_CODE
 
 
 def test_auth_service_register(monkeypatch):

@@ -6,12 +6,13 @@ import re
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import HTTPException, status
 from jose import jwt
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.utils import mask_phone
+from app.domain.auth import AuthError, BizCode
 from app.models.login_session import LoginSession
 from app.models.slider_challenge import SliderChallenge
 from app.models.sms_code import SmsCode
@@ -47,10 +48,7 @@ def decode_token(token: str) -> dict:
     try:
         return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
     except Exception:  # Catch all JWT-related errors (invalid, expired, malformed)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="无效或过期的 token"
-        )
+        raise AuthError(BizCode.AUTH_TOKEN_INVALID)
 
 
 class AuthService:
@@ -59,7 +57,7 @@ class AuthService:
     @staticmethod
     def _validate_phone(phone: str) -> None:
         if not PHONE_RE.match(phone):
-            raise HTTPException(status_code=400, detail="手机号格式不正确")
+            raise AuthError(BizCode.AUTH_INVALID_PHONE)
 
     @staticmethod
     def _create_token(user: User, token_type: str, expires_delta: timedelta) -> tuple[str, str, datetime]:
@@ -245,7 +243,7 @@ class AuthService:
             record.is_used = True
             db.commit()
         if not valid:
-            raise HTTPException(status_code=400, detail="滑块验证未通过，请重试")
+            raise AuthError(BizCode.AUTH_SLIDER_FAILED)
         return {"ticket": record.ticket, "expires_in": 300}
 
     def consume_slider_ticket(self, db: Session, ticket: str | None) -> None:
@@ -266,7 +264,7 @@ class AuthService:
             record.ticket = None
             db.commit()
         if record is None:
-            raise HTTPException(status_code=400, detail="请先完成滑块验证")
+            raise AuthError(BizCode.AUTH_SLIDER_REQUIRED)
 
     def send_code(self, db: Session, phone: str, slider_ticket: str | None = None) -> None:
         self._validate_phone(phone)
@@ -276,17 +274,11 @@ class AuthService:
         elapsed = (now - latest.created_at).total_seconds() if latest and latest.created_at else None
         if elapsed is not None and elapsed < resend_interval:
             remaining = max(1, math.ceil(resend_interval - elapsed))
-            raise HTTPException(
-                status_code=429,
-                detail=f"验证码发送过于频繁，请 {remaining} 秒后再试",
-            )
+            raise AuthError(BizCode.AUTH_SMS_RATE_LIMIT, remaining=remaining)
         today_start = datetime(now.year, now.month, now.day)
         today_count = db.query(SmsCode).filter(SmsCode.phone == phone, SmsCode.created_at >= today_start).count()
         if today_count >= SMS_DAILY_LIMIT:
-            raise HTTPException(
-                status_code=429,
-                detail=f"今日验证码发送次数已达上限（每日 {SMS_DAILY_LIMIT} 次），请明天再试",
-            )
+            raise AuthError(BizCode.AUTH_SMS_DAILY_LIMIT, limit=SMS_DAILY_LIMIT)
         # The slider gate runs after the rate limits so a 429 does not burn the
         # user's already-verified ticket.
         if settings.CAPTCHA_ENFORCED:
@@ -302,8 +294,8 @@ class AuthService:
         try:
             sms_service.send_verification_code(phone, code)
         except Exception as exc:
-            logger.error("SMS send failed to %s: %s", phone, exc)
-            raise HTTPException(status_code=502, detail=f"短信发送失败: {exc}")
+            logger.error("SMS send failed to %s: %s", mask_phone(phone), type(exc).__name__)
+            raise AuthError(BizCode.AUTH_SMS_FAILED) from exc
 
     def verify_code(self, db: Session, phone: str, code: str) -> bool:
         self._validate_phone(phone)
@@ -330,15 +322,15 @@ class AuthService:
 
     def register(self, db: Session, phone: str, code: str) -> dict:
         if not self.verify_code(db, phone, code):
-            raise HTTPException(status_code=400, detail="验证码错误或已过期")
+            raise AuthError(BizCode.AUTH_INVALID_CODE)
         existing = db.query(User).filter(User.phone == phone).first()
         if existing:
             # A soft-deleted row still occupies the unique phone slot; surface
             # a distinct message so the admin can decide whether to restore or
             # purge before the phone can be reused.
             if existing.deleted_at is not None:
-                raise HTTPException(status_code=409, detail="该手机号曾被删除，如需重新注册请联系管理员恢复")
-            raise HTTPException(status_code=409, detail="用户已存在")
+                raise AuthError(BizCode.AUTH_PHONE_PREVIOUSLY_DELETED)
+            raise AuthError(BizCode.AUTH_USER_EXISTS)
         role = "admin" if db.query(func.count(User.id)).scalar() == 0 else "user"
         user = User(phone=phone, role=role, is_active=True, is_blacklisted=False, last_login=utcnow())
         db.add(user)
@@ -348,29 +340,29 @@ class AuthService:
 
     def login(self, db: Session, phone: str, code: str) -> dict:
         if not self.verify_code(db, phone, code):
-            raise HTTPException(status_code=400, detail="验证码错误或已过期")
+            raise AuthError(BizCode.AUTH_INVALID_CODE)
         user = db.query(User).filter(User.phone == phone).first()
         if not user:
-            raise HTTPException(status_code=400, detail="用户不存在，请先注册")
+            raise AuthError(BizCode.AUTH_USER_NOT_FOUND)
         if user.deleted_at is not None:
-            raise HTTPException(status_code=403, detail="账号已被删除")
+            raise AuthError(BizCode.AUTH_ACCOUNT_REMOVED)
         if not user.is_active or user.is_blacklisted:
-            raise HTTPException(status_code=403, detail="账号已被禁用")
+            raise AuthError(BizCode.AUTH_ACCOUNT_DISABLED)
         user.last_login = utcnow()
         db.commit()
         db.refresh(user)
         return {"user": user.to_dict(), "tokens": self.create_token_pair(user)}
 
-    def sign_in(self, db: Session, phone: str, code: str) -> dict:
+    def sign_in(self, db: Session, phone: str, code: str) -> tuple[dict, BizCode]:
         """Single-step auth: verify code, then login if user exists or
         auto-register on the spot. Returns the same envelope as login/register
-        with an extra ``is_new_user`` flag so the frontend can show a "首次登录
-        已为你创建账号" hint when appropriate.
+        with an extra ``is_new_user`` fact and an explicit outcome code.
         """
         if not self.verify_code(db, phone, code):
-            raise HTTPException(status_code=400, detail="验证码错误或已过期")
+            raise AuthError(BizCode.AUTH_INVALID_CODE)
         user = db.query(User).filter(User.phone == phone).first()
         is_new_user = False
+        outcome = BizCode.AUTH_LOGIN_SUCCESS
         if user is None:
             role = "admin" if db.query(func.count(User.id)).scalar() == 0 else "user"
             user = User(phone=phone, role=role, is_active=True, is_blacklisted=False, last_login=utcnow())
@@ -378,15 +370,16 @@ class AuthService:
             db.commit()
             db.refresh(user)
             is_new_user = True
+            outcome = BizCode.AUTH_ACCOUNT_CREATED
         else:
             if user.deleted_at is not None:
-                raise HTTPException(status_code=403, detail="账号已被删除")
+                raise AuthError(BizCode.AUTH_ACCOUNT_REMOVED)
             if not user.is_active or user.is_blacklisted:
-                raise HTTPException(status_code=403, detail="账号已被禁用")
+                raise AuthError(BizCode.AUTH_ACCOUNT_DISABLED)
             user.last_login = utcnow()
             db.commit()
             db.refresh(user)
-        return {"user": user.to_dict(), "tokens": self.create_token_pair(user), "is_new_user": is_new_user}
+        return {"user": user.to_dict(), "tokens": self.create_token_pair(user), "is_new_user": is_new_user}, outcome
 
     def blacklist_token(self, db: Session, payload: dict, reason: str = "logout") -> None:
         jti = payload.get("jti")
@@ -402,19 +395,19 @@ class AuthService:
     def refresh_token(self, db: Session, refresh_token: str) -> dict:
         payload = decode_token(refresh_token)
         if payload.get("type") != "refresh":
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效 refresh token")
+            raise AuthError(BizCode.AUTH_REFRESH_INVALID)
         if db.query(TokenBlacklist).filter(TokenBlacklist.jti == payload.get("jti")).first():
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="refresh token 已失效")
+            raise AuthError(BizCode.AUTH_REFRESH_REVOKED)
         user = db.query(User).filter(User.id == int(payload["sub"])).first()
         if not user or not user.is_active or user.is_blacklisted:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号不可用")
+            raise AuthError(BizCode.AUTH_ACCOUNT_UNAVAILABLE)
         # Check if tokens were invalidated after this refresh token was issued
         if user.tokens_invalidated_at:
             iat = payload.get("iat")
             if iat:
                 token_issued_at = datetime.fromtimestamp(iat, tz=UTC).replace(tzinfo=None)
                 if user.tokens_invalidated_at > token_issued_at:
-                    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token 已被撤销（强制登出）")
+                    raise AuthError(BizCode.AUTH_FORCED_LOGOUT)
         self.blacklist_token(db, payload, reason="refresh_rotation")
         return {"user": user.to_dict(), "tokens": self.create_token_pair(user)}
 
@@ -461,12 +454,12 @@ class AuthService:
 
         # Verify code for the new phone
         if not self.verify_code(db, new_phone, code):
-            raise HTTPException(status_code=400, detail="验证码错误或已过期")
+            raise AuthError(BizCode.AUTH_INVALID_CODE)
 
         # Check if new phone is already registered
         existing = db.query(User).filter(User.phone == new_phone, User.id != user.id).first()
         if existing:
-            raise HTTPException(status_code=409, detail="该手机号已被注册")
+            raise AuthError(BizCode.AUTH_PHONE_EXISTS)
 
         user.phone = new_phone
         db.commit()

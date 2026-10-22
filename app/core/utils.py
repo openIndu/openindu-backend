@@ -4,6 +4,9 @@ import re
 from datetime import UTC, datetime
 from typing import Any as _Any  # avoid a forward-import of FastAPI's Request
 
+from app.core.err_code import ErrorCode
+from app.domain.auth import BizCode
+
 # Allowed in OSS object names: letters/digits/CJK/dot/dash/underscore/space.
 # Everything else (path separators, control chars, &, ?, #, …) is stripped so
 # the resulting key is safe to embed in URLs without re-encoding traps.
@@ -60,14 +63,19 @@ def mask_phones_in_text(text: str | None) -> str | None:
     return _PHONE_IN_TEXT_RE.sub(lambda m: f"{m.group(1)}****{m.group(3)}", text)
 
 
-def ok(data=None, message: str = "操作成功"):
+def ok(data=None, message: str | None = None, *, biz_code: BizCode = BizCode.OK):
     """Standard success envelope shared by all API routers.
 
     Use an explicit ``None`` check, not ``data or {}`` — an empty list (e.g. a
     brand+category combo with no series) is falsy and would be coerced to ``{}``,
     breaking array consumers on the frontend (``.filter is not a function``).
     """
-    return {"code": 200, "message": message, "data": data if data is not None else {}}
+    return {
+        "code": 200,
+        "biz_code": biz_code.value,
+        "message": message if message is not None else ErrorCode.message(biz_code),
+        "data": data if data is not None else {},
+    }
 
 
 # ---------------------------------------------------------------------------
