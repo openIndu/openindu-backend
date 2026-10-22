@@ -31,6 +31,7 @@ from app.core.config import settings
 from app.core.database import engine
 from app.core.err_code import ErrorCode
 from app.domain.auth import AuthError
+from app.domain.membership import MemberError
 from app.middleware.online_stats import OnlineStatsMiddleware
 from app.middleware.token_blacklist import TokenBlacklistMiddleware
 from app.models import Base
@@ -106,6 +107,11 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 @app.exception_handler(AuthError)
 async def auth_error_handler(request: Request, exc: AuthError):
+    return JSONResponse(status_code=ErrorCode.status(exc.code), content=ErrorCode.error_body(exc.code, **exc.params))
+
+
+@app.exception_handler(MemberError)
+async def member_error_handler(request: Request, exc: MemberError):
     return JSONResponse(status_code=ErrorCode.status(exc.code), content=ErrorCode.error_body(exc.code, **exc.params))
 
 

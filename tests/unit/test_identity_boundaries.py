@@ -1,9 +1,13 @@
-"""Protect the inward dependency direction of the migrated identity context."""
+"""Protect the inward dependency direction of the migrated contexts."""
 
 import ast
 from pathlib import Path
 
-IDENTITY = Path(__file__).resolve().parents[2] / "app" / "identity"
+APP = Path(__file__).resolve().parents[2] / "app"
+
+CONTEXTS = ("identity", "membership")
+PROHIBITED = ("app.api", "app.core", "app.models", "app.services", "fastapi", "sqlalchemy")
+PROHIBITED += tuple(f"app.{context}.infrastructure" for context in CONTEXTS)
 
 
 def imports(path: Path) -> set[str]:
@@ -18,10 +22,10 @@ def imports(path: Path) -> set[str]:
 
 
 def test_domain_and_application_do_not_import_outer_layers():
-    prohibited = ("app.api", "app.core", "app.identity.infrastructure", "app.models", "app.services", "fastapi", "sqlalchemy")
-    for layer in ("domain", "application"):
-        for path in (IDENTITY / layer).glob("*.py"):
-            for module in imports(path):
-                assert not any(module == prefix or module.startswith(prefix + ".") for prefix in prohibited), (
-                    f"{path}: outward dependency {module}"
-                )
+    for context in CONTEXTS:
+        for layer in ("domain", "application"):
+            for path in (APP / context / layer).glob("*.py"):
+                for module in imports(path):
+                    assert not any(module == prefix or module.startswith(prefix + ".") for prefix in PROHIBITED), (
+                        f"{path}: outward dependency {module}"
+                    )

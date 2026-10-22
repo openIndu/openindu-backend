@@ -1,13 +1,11 @@
-"""User administration API."""
-from datetime import UTC, datetime
-
-from fastapi import APIRouter, Depends, HTTPException, Query
+"""User administration API — thin adapter over the membership context."""
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db, require_admin
-from app.core.utils import _is_private, mask_phone, ok
-from app.models.admin_audit_log import AdminAuditLog
+from app.core.utils import _is_private, ok
+from app.membership.provider import membership
 from app.models.login_session import LoginSession
 from app.models.user import User
 
@@ -16,10 +14,6 @@ router = APIRouter(prefix="/users")
 
 class RoleChange(BaseModel):
     role: str
-
-
-def audit(db: Session, admin_id: int, target_user_id: int, action: str, detail: dict | None = None):
-    db.add(AdminAuditLog(admin_id=admin_id, target_user_id=target_user_id, action=action, detail=detail or {}))
 
 
 def _enrich_user_dict(db: Session, user_dict: dict, user_id: int) -> dict:
@@ -106,54 +100,25 @@ async def list_users(
 
 @router.put("/{user_id}/role")
 async def change_role(user_id: int, body: RoleChange, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    if body.role not in ("user", "member", "admin"):
-        raise HTTPException(400, "无效角色")
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user: raise HTTPException(404, "用户不存在")
-    old_role = user.role
-    user.role = body.role
-    audit(db, admin.id, user.id, "role_change", {"old_role": old_role, "new_role": body.role})
-    db.commit(); db.refresh(user)
+    user = membership(db).change_role.execute(user_id, admin.id, body.role)
     return ok(user.to_dict())
 
 
 @router.post("/{user_id}/blacklist")
 async def blacklist(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user: raise HTTPException(404, "用户不存在")
-    now = datetime.now(UTC).replace(tzinfo=None)
-    user.is_active = False; user.is_blacklisted = True; user.blacklisted_at = now; user.blacklisted_by = admin.id; user.tokens_invalidated_at = now
-    # Deactivate all login sessions for this user
-    db.query(LoginSession).filter(LoginSession.user_id == user_id, LoginSession.is_active.is_(True)).update(
-        {"is_active": False}, synchronize_session=False
-    )
-    audit(db, admin.id, user.id, "blacklist")
-    db.commit(); db.refresh(user)
+    user = membership(db).blacklist.execute(user_id, admin.id)
     return ok(user.to_dict(), "已拉黑")
 
 
 @router.post("/{user_id}/unblacklist")
 async def unblacklist(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user: raise HTTPException(404, "用户不存在")
-    user.is_active = True; user.is_blacklisted = False; user.blacklisted_at = None; user.blacklisted_by = None; user.tokens_invalidated_at = None
-    audit(db, admin.id, user.id, "unblacklist")
-    db.commit(); db.refresh(user)
+    user = membership(db).unblacklist.execute(user_id, admin.id)
     return ok(user.to_dict(), "已解除拉黑")
 
 
 @router.post("/{user_id}/force-logout")
 async def force_logout(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user: raise HTTPException(404, "用户不存在")
-    now = datetime.now(UTC).replace(tzinfo=None)
-    user.tokens_invalidated_at = now
-    # Deactivate all login sessions for this user
-    db.query(LoginSession).filter(LoginSession.user_id == user_id, LoginSession.is_active.is_(True)).update(
-        {"is_active": False}, synchronize_session=False
-    )
-    audit(db, admin.id, user.id, "force_logout")
-    db.commit(); db.refresh(user)
+    user = membership(db).force_logout.execute(user_id, admin.id)
     return ok(user.to_dict(), "已强制登出")
 
 
@@ -166,21 +131,5 @@ async def delete_user(user_id: int, db: Session = Depends(get_db), admin: User =
     the admin list and cannot log in (the identity login use case also
     refuses if ``deleted_at`` is set).
     """
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(404, "用户不存在")
-    if user.deleted_at is not None:
-        raise HTTPException(409, "用户已删除")
-    if user.id == admin.id:
-        raise HTTPException(400, "不能删除当前登录的管理员账号")
-    now = datetime.now(UTC).replace(tzinfo=None)
-    user.deleted_at = now
-    user.is_active = False
-    user.tokens_invalidated_at = now
-    db.query(LoginSession).filter(LoginSession.user_id == user_id, LoginSession.is_active.is_(True)).update(
-        {"is_active": False}, synchronize_session=False
-    )
-    audit(db, admin.id, user.id, "delete", {"phone": mask_phone(user.phone)})
-    db.commit()
-    db.refresh(user)
+    user = membership(db).delete_user.execute(user_id, admin.id)
     return ok(user.to_dict(), "已删除")
