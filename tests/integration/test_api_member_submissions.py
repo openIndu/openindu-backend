@@ -138,13 +138,18 @@ class TestSoftwareSubmissions:
         assert data["submitted_by"] == member.id
         assert data["is_published"] is False
 
-    def test_admin_upload_not_pending(self, admin):
+    def test_admin_upload_enters_review_with_owner(self, admin):
         client = _client_as(admin)
         resp = _upload_software(client)
         assert resp.status_code == 200, resp.text
         data = resp.json()["data"]
-        assert data["submission_status"] == "published"
-        assert data["submitted_by"] is None
+        assert data["submission_status"] == "pending"
+        assert data["submitted_by"] == admin.id
+        # Admin uploads used to be ownerless (submitted_by NULL) and therefore
+        # never showed up in the uploader's own 我的投稿 list.
+        listed = client.get("/api/v1/software/my-submissions")
+        assert listed.status_code == 200, listed.text
+        assert any(item["id"] == data["id"] for item in listed.json()["data"]["items"])
 
     def test_pending_submission_invisible_in_published_list(self, member):
         client = _client_as(member)
@@ -290,11 +295,13 @@ class TestDocumentSubmissions:
         assert data["submission_status"] == "pending"
         assert data["submitted_by"] == member.id
 
-    def test_admin_upload_not_pending(self, admin):
+    def test_admin_upload_enters_review_with_owner(self, admin):
         client = _client_as(admin)
         resp = _upload_document(client)
         assert resp.status_code == 200, resp.text
-        assert resp.json()["data"]["submission_status"] == "published"
+        data = resp.json()["data"]
+        assert data["submission_status"] == "pending"
+        assert data["submitted_by"] == admin.id
 
     def test_review_publish_and_reject_flow(self, member, admin):
         member_client = _client_as(member)

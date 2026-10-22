@@ -38,16 +38,6 @@ def require_positive_size(size: int) -> None:
         raise CatalogError(CatalogCode.FILE_SIZE_INVALID)
 
 
-def initial_submission_state(role: str) -> tuple[str, int | None]:
-    """Admin uploads go straight to the catalog; members enter review.
-
-    Returns (submission_status, submitted_by).
-    """
-    if role == "admin":
-        return PUBLISHED, None
-    return PENDING, None  # submitted_by filled by the caller
-
-
 def require_reject_reason(reason: str | None) -> str:
     stripped = (reason or "").strip()
     if not stripped:

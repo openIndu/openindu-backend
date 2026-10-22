@@ -1,12 +1,20 @@
 """SQLAlchemy adapters for the software catalog."""
 from datetime import datetime
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.domain.catalog import CatalogCode, CatalogError
 from app.models.document import Document
 from app.models.download_log import DownloadLog
 from app.models.resource_tag import ResourceTag
 from app.models.software import Software, SoftwareVersion
+
+
+def _duplicate_oss_key(exc: IntegrityError) -> bool:
+    """True when an IntegrityError is the software_versions.oss_key unique hit
+    (Postgres names the constraint, SQLite names the column)."""
+    return "oss_key" in str(exc).lower()
 
 
 class SqlTagDirectory:
@@ -82,13 +90,19 @@ class SqlSoftwareCatalog:
             submission_status=submission_status,
         )
         self.db.add(sw)
-        self.db.flush()
-        self.db.add(SoftwareVersion(
-            software_id=sw.id, version=version, original_name=original_name,
-            file_size=meta["file_size"], file_hash=meta["file_hash"], oss_key=meta["oss_key"],
-        ))
-        self.db.commit()
-        self.db.refresh(sw)
+        try:
+            self.db.flush()
+            self.db.add(SoftwareVersion(
+                software_id=sw.id, version=version, original_name=original_name,
+                file_size=meta["file_size"], file_hash=meta["file_hash"], oss_key=meta["oss_key"],
+            ))
+            self.db.commit()
+            self.db.refresh(sw)
+        except IntegrityError as exc:
+            self.db.rollback()
+            if _duplicate_oss_key(exc):
+                raise CatalogError(CatalogCode.SOFTWARE_FILE_EXISTS) from None
+            raise
         return sw
 
     def add_submission_from_oss(self, *, oss_key: str, original_name: str, brand: str, category: str, version: str, description: str | None, file_size: int, file_hash: str | None, submitted_by: int | None, submission_status: str) -> Software:
@@ -106,6 +120,11 @@ class SqlSoftwareCatalog:
             ))
             self.db.commit()
             self.db.refresh(sw)
+        except IntegrityError as exc:
+            self.db.rollback()
+            if _duplicate_oss_key(exc):
+                raise CatalogError(CatalogCode.SOFTWARE_FILE_EXISTS) from None
+            raise
         except Exception:
             self.db.rollback()
             raise
@@ -121,6 +140,11 @@ class SqlSoftwareCatalog:
             sw.latest_version = version
             self.db.commit()
             self.db.refresh(sw)
+        except IntegrityError as exc:
+            self.db.rollback()
+            if _duplicate_oss_key(exc):
+                raise CatalogError(CatalogCode.VERSION_FILE_EXISTS) from None
+            raise
         except Exception:
             self.db.rollback()
             raise

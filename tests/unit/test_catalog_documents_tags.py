@@ -143,12 +143,13 @@ NOW = datetime(2026, 10, 22, 12, 0, 0)
 
 # ── SubmitDocument ────────────────────────────────────────────────────────────
 
-def test_submit_document_admin_publishes_member_pends():
+def test_submit_document_admin_enters_review_with_owner():
     storage, docs = FakeStorage(), FakeDocs()
+    admin = _admin()
     admin_doc = SubmitDocument(FakeTags(), storage, docs, "docs", 50).execute(
-        io.BytesIO(b"pdf"), "a.pdf", None, "siemens", "manual", "", "desc", _admin())
-    assert admin_doc.submission_status == PUBLISHED
-    assert admin_doc.submitted_by is None
+        io.BytesIO(b"pdf"), "a.pdf", None, "siemens", "manual", "", "desc", admin)
+    assert admin_doc.submission_status == PENDING
+    assert admin_doc.submitted_by == admin.id
     assert storage.prefix == "docs/siemens"
     assert storage.content_type == "application/pdf"
 
@@ -196,7 +197,7 @@ def test_submit_document_sizes_stream_when_size_unknown():
     SubmitDocument(FakeTags(), FakeStorage(), docs, "docs", 50).execute(
         stream, "a.pdf", None, "siemens", "manual", "", "", _admin())
     assert stream.pos == 0  # stream position restored after sizing
-    assert docs.add_kwargs["submission_status"] == PUBLISHED
+    assert docs.add_kwargs["submission_status"] == PENDING
 
 
 def test_submit_document_compensates_upload_when_db_fails():

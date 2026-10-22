@@ -73,8 +73,7 @@ async def upload_document(file: UploadFile = File(...), brand: str = Form(...), 
         file.file, file.filename, file.content_type, brand, category, series, description, user,
         size_bytes=getattr(file, "size", None),
     )
-    is_admin = user.role == "admin"
-    return ok(doc.to_dict(), "上传成功" if is_admin else "投稿成功，等待管理员审核")
+    return ok(doc.to_dict(), "投稿成功，等待管理员审核")
 
 
 @router.get("/brands/list")
