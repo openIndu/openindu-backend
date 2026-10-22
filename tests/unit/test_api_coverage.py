@@ -159,6 +159,8 @@ def test_software_responses_do_not_expose_legacy_series():
             description="desc",
             created_at=datetime(2026, 1, 1),
             latest_version="1.0",
+            submission_status="published",
+            rejected_reason=None,
         ),
         oss_key="soft/tool.zip",
         original_name="Tool.zip",

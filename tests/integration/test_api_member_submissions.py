@@ -143,6 +143,22 @@ class TestSoftwareSubmissions:
         assert resp.status_code == 200
         assert all(item["id"] != sw_id for item in resp.json()["data"]["items"])
 
+    def test_list_filter_by_submission_status(self, member, admin):
+        member_client = _client_as(member)
+        pending_id = _upload_software(member_client).json()["data"]["id"]
+        admin_client = _client_as(admin)
+        resp = admin_client.get("/api/v1/software", params={"submission_status": "pending", "expand_versions": "true"})
+        assert resp.status_code == 200
+        items = resp.json()["data"]["items"]
+        assert items and all(i["id"] == pending_id for i in items if i["id"] == pending_id)
+        assert any(i["id"] == pending_id for i in items)
+        # Expanded version rows must carry the review state for the admin UI.
+        assert all(i["submission_status"] == "pending" for i in items)
+        resp = admin_client.get("/api/v1/software", params={"submission_status": "pending", "expand_versions": "false"})
+        assert all(i["id"] != 0 and i["submission_status"] == "pending" for i in resp.json()["data"]["items"])
+        resp = admin_client.get("/api/v1/software", params={"submission_status": "rejected"})
+        assert all(i["submission_status"] == "rejected" for i in resp.json()["data"]["items"])
+
     def test_review_publish_makes_visible(self, member, admin):
         member_client = _client_as(member)
         sw_id = _upload_software(member_client).json()["data"]["id"]
@@ -264,6 +280,8 @@ class TestDocumentSubmissions:
         member_client = _client_as(member)
         doc_id = _upload_document(member_client).json()["data"]["id"]
         admin_client = _client_as(admin)
+        listed = admin_client.get("/api/v1/documents", params={"submission_status": "pending"}).json()["data"]["items"]
+        assert any(i["id"] == doc_id for i in listed)
         resp = admin_client.patch(f"/api/v1/documents/{doc_id}/review", json={"action": "reject", "reason": "缺系列信息"})
         assert resp.status_code == 200, resp.text
         assert resp.json()["data"]["submission_status"] == "rejected"
