@@ -1,0 +1,1 @@
+"""Membership transitions and invariants."""
