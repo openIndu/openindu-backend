@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from app.api.visits import _bearer_user_id
-from app.middleware.online_stats import OnlineStatsMiddleware
+from app.shared.middleware.online_stats import OnlineStatsMiddleware
 from app.web_app import app as web_app
 
 

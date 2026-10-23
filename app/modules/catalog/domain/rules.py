@@ -2,7 +2,7 @@
 from datetime import date, datetime
 from typing import Protocol
 
-from app.domain.catalog import CatalogCode, CatalogError
+from app.shared.domain.catalog import CatalogCode, CatalogError
 
 ALLOWED_SOFTWARE_EXTS = {".zip", ".exe", ".msi", ".rar", ".7z", ".pkg", ".package"}
 PENDING = "pending"

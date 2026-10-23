@@ -10,11 +10,11 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.database import SessionLocal, engine
-from app.core.dependencies import get_current_user, require_admin, require_auth, require_member
-from app.models import Base
-from app.models.resource_tag import ResourceTag
-from app.models.user import User
+from app.shared.core.database import SessionLocal, engine
+from app.shared.core.dependencies import get_current_user, require_admin, require_auth, require_member
+from app.shared.models import Base
+from app.shared.models.resource_tag import ResourceTag
+from app.shared.models.user import User
 
 # conftest's create_all predates the resource_tags table (every other test
 # mocks the DB away, so nothing else creates it). create_all is idempotent,

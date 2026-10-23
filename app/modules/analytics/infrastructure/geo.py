@@ -22,7 +22,7 @@ import logging
 import threading
 from pathlib import Path
 
-from app.core.config import settings
+from app.shared.core.config import settings
 
 logger = logging.getLogger(__name__)
 

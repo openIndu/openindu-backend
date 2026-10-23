@@ -7,12 +7,12 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
-from app.core.audit import add_audit_detail, self_audited
-from app.core.database import SessionLocal
-from app.core.dependencies import require_admin, require_auth
-from app.middleware import admin_audit
-from app.middleware.admin_audit import ACTION_MAX_LENGTH, READ_ONLY_METHODS, AdminAuditMiddleware, audit_action
-from app.models.admin_audit_log import AdminAuditLog
+from app.shared.core.audit import add_audit_detail, self_audited
+from app.shared.core.database import SessionLocal
+from app.shared.core.dependencies import require_admin, require_auth
+from app.shared.middleware import admin_audit
+from app.shared.middleware.admin_audit import ACTION_MAX_LENGTH, READ_ONLY_METHODS, AdminAuditMiddleware, audit_action
+from app.shared.models.admin_audit_log import AdminAuditLog
 from app.web_app import app as web_app
 
 ADMIN = SimpleNamespace(id=7, role="admin")

@@ -43,7 +43,7 @@ def test_brand_mapping_helpers():
 
 def test_documents_helpers_and_edges(monkeypatch):
     from app.api import documents
-    from app.services.storage_service import storage_service
+    from app.shared.services.storage_service import storage_service
 
     assert documents.ok()["data"] == {}
     assert documents._client_ip(_Request("1.1.1.1, 2.2.2.2")) == "1.1.1.1"
@@ -65,7 +65,7 @@ def test_documents_helpers_and_edges(monkeypatch):
 
 def test_documents_list_upload_get(monkeypatch):
     from app.api import documents
-    from app.services.storage_service import storage_service
+    from app.shared.services.storage_service import storage_service
 
     db = MagicMock()
     doc = SimpleNamespace(id=1, oss_key="docs/a.pdf", original_name="a.pdf", is_published=True)
@@ -111,9 +111,9 @@ def test_documents_brands_categories():
 
 
 def test_document_series_validation():
-    from app.core.err_code import ErrorCode
-    from app.domain.catalog import CatalogCode, CatalogError
     from app.modules.catalog.domain.rules import require_valid_series
+    from app.shared.core.err_code import ErrorCode
+    from app.shared.domain.catalog import CatalogCode, CatalogError
 
     require_valid_series("s7-1200", True)
     require_valid_series(None, False)
@@ -126,8 +126,8 @@ def test_document_series_validation():
 
 def test_series_tags_require_brand_and_global_unique_value():
     from app.api import tags
-    from app.core.err_code import ErrorCode
-    from app.domain.catalog import CatalogCode, CatalogError
+    from app.shared.core.err_code import ErrorCode
+    from app.shared.domain.catalog import CatalogCode, CatalogError
 
     db = MagicMock()
     body = tags.CreateTagBody(type="doc_series", value="s7-1200", label_zh="S7-1200", parent_value="plc-manual")
@@ -148,7 +148,7 @@ def test_series_tags_require_brand_and_global_unique_value():
 
 def test_software_responses_do_not_expose_legacy_series():
     from app.api import software
-    from app.models.software import Software
+    from app.shared.models.software import Software
 
     sw = Software(filename="tool.zip", original_name="Tool.zip", brand="siemens", category="utility")
     sw.id = 1
@@ -186,8 +186,8 @@ def test_software_responses_do_not_expose_legacy_series():
 
 def test_sw_series_tag_type_is_rejected():
     from app.api import tags
-    from app.core.err_code import ErrorCode
-    from app.domain.catalog import CatalogCode, CatalogError
+    from app.shared.core.err_code import ErrorCode
+    from app.shared.domain.catalog import CatalogCode, CatalogError
 
     db = MagicMock()
     with pytest.raises(HTTPException) as exc:
@@ -213,7 +213,7 @@ def test_software_download_and_delete(monkeypatch):
 
     from app.api import software
     from app.modules.catalog.application.downloads import IssueSoftwareDownloadLink
-    from app.services.storage_service import storage_service as storage
+    from app.shared.services.storage_service import storage_service as storage
 
     assert software.ok()["data"] == {}
     assert software._ip(_Request("2.2.2.2, 3.3.3.3")) == "2.2.2.2"
@@ -254,7 +254,7 @@ def test_software_download_and_delete(monkeypatch):
 
 def test_software_list_upload_get_add_delete(monkeypatch):
     from app.api import software
-    from app.services.storage_service import storage_service
+    from app.shared.services.storage_service import storage_service
 
     sw = SimpleNamespace(id=1, original_name="Tool.zip", brand="siemens", latest_version="1.0", download_count=0, is_published=True)
     sw.to_dict = lambda include_versions=False: {"id": sw.id}
@@ -356,7 +356,7 @@ def test_dashboard_date_buckets_use_beijing_time():
     from sqlalchemy.dialects import postgresql
 
     from app.api import stats
-    from app.models.visit_event import VisitEvent
+    from app.shared.models.visit_event import VisitEvent
 
     for expression in (stats._cst_day(VisitEvent.created_at), stats._cst_month(VisitEvent.created_at)):
         rendered = str(expression.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
@@ -681,8 +681,8 @@ def test_files_api_creates_debug_placeholder(tmp_path, monkeypatch):
 
 
 def test_storage_service_facade_paths(monkeypatch):
-    from app.services import storage_service as module
-    from app.services.storage_service import StorageService
+    from app.shared.services import storage_service as module
+    from app.shared.services.storage_service import StorageService
 
     local_impl = MagicMock()
     local_impl.upload_file.return_value = {"filename": "a.pdf"}
@@ -714,9 +714,9 @@ def test_storage_service_facade_paths(monkeypatch):
 
 
 def test_file_storage_service(monkeypatch, tmp_path):
-    from app.services.file_storage import FileStorageService
+    from app.shared.services.file_storage import FileStorageService
 
-    monkeypatch.setattr("app.services.file_storage.settings", SimpleNamespace(DATA_DIR=str(tmp_path)))
+    monkeypatch.setattr("app.shared.services.file_storage.settings", SimpleNamespace(DATA_DIR=str(tmp_path)))
     service = FileStorageService()
     result = service.upload_file(io.BytesIO(b"test content"), "file.txt", "test-prefix")
     assert result["file_size"] == len(b"test content")
@@ -730,7 +730,7 @@ def test_file_storage_service(monkeypatch, tmp_path):
 
 
 def test_dependencies_require_roles():
-    from app.core import dependencies
+    from app.shared.core import dependencies
 
     with pytest.raises(HTTPException):
         asyncio.run(dependencies.require_auth(None))
@@ -785,8 +785,8 @@ def test_visit_tracking_rejects_unknown_event_type():
     assert exc.value.status_code == 400
 
 def test_identity_phone_validation():
-    from app.domain.auth import AuthError, BizCode
     from app.modules.identity.domain.phone import require_valid_phone
+    from app.shared.domain.auth import AuthError, BizCode
 
     with pytest.raises(AuthError) as exc:
         require_valid_phone("1234")
@@ -796,9 +796,9 @@ def test_identity_phone_validation():
 def test_identity_issue_token_pair():
     from dataclasses import asdict
 
-    from app.core.utils import utcnow
     from app.modules.identity.application.sessions import IssueTokenPair
     from app.modules.identity.infrastructure.tokens import JwtTokenCodec
+    from app.shared.core.utils import utcnow
 
     account = SimpleNamespace(id=1, phone="13800138000", role="user")
     tokens = asdict(IssueTokenPair(JwtTokenCodec(), None, utcnow, 60, 7).execute(account))
@@ -807,8 +807,8 @@ def test_identity_issue_token_pair():
 
 
 def test_identity_verify_code():
-    from app.core.utils import utcnow
     from app.modules.identity.application.verification_codes import VerifySmsCode
+    from app.shared.core.utils import utcnow
 
     record = SimpleNamespace(code="654321", is_used=False, verify_attempts=0)
 
@@ -826,8 +826,8 @@ def test_identity_verify_code():
 def test_identity_send_code():
     import random
 
-    from app.core.utils import utcnow
     from app.modules.identity.application.verification_codes import SendVerificationCode
+    from app.shared.core.utils import utcnow
 
     class Store:
         added = False
@@ -853,10 +853,10 @@ def test_identity_send_code():
 
 
 def test_identity_sign_in_rejects_bad_code():
-    from app.core.utils import utcnow
-    from app.domain.auth import AuthError, BizCode
     from app.modules.identity.application.authenticate import AuthenticateBySms, AuthenticationIntent
     from app.modules.identity.application.verification_codes import VerifySmsCode
+    from app.shared.core.utils import utcnow
+    from app.shared.domain.auth import AuthError, BizCode
 
     class Store:
         def latest_active(self, phone, now):
@@ -885,9 +885,9 @@ def test_identity_sign_in_rejects_bad_code():
 
 
 def test_identity_logout():
-    from app.core.utils import utcnow
     from app.modules.identity.application.sessions import EndSession, IssueTokenPair
     from app.modules.identity.infrastructure.tokens import JwtTokenCodec
+    from app.shared.core.utils import utcnow
 
     class Blacklist:
         added = False
@@ -912,9 +912,9 @@ def test_identity_logout():
 
 
 def test_identity_decode_token_roundtrip():
-    from app.core.utils import utcnow
     from app.modules.identity.application.sessions import IssueTokenPair
     from app.modules.identity.infrastructure.tokens import JwtTokenCodec, decode_token
+    from app.shared.core.utils import utcnow
 
     account = SimpleNamespace(id=7, phone="13800138000", role="user")
     token = IssueTokenPair(JwtTokenCodec(), None, utcnow, 60, 7).execute(account).access_token
@@ -922,7 +922,7 @@ def test_identity_decode_token_roundtrip():
 
 
 def test_utcnnow():
-    from app.core.utils import utcnow
+    from app.shared.core.utils import utcnow
 
     now = utcnow()
     assert now is not None
@@ -933,7 +933,7 @@ def test_models():
 def _direct_upload_token(claims_extra: dict) -> str:
     import jwt
 
-    from app.core.config import settings
+    from app.shared.core.config import settings
     claims = {"oss_key": "software/siemens/abc.zip", "filename": "t.zip", "brand": "siemens",
               "category": "utility", "version": "1.0", "description": "",
               "content_type": "application/zip", "size": 100,
@@ -944,7 +944,7 @@ def _direct_upload_token(claims_extra: dict) -> str:
 
 def test_software_direct_upload_init_local(monkeypatch):
     from app.api import software
-    from app.services.storage_service import storage_service as _ss
+    from app.shared.services.storage_service import storage_service as _ss
     monkeypatch.setattr(_ss, "_backend", "local")
     db = MagicMock()
     db.query.side_effect = [_chain(items=[SimpleNamespace(value="siemens")]),
@@ -958,9 +958,9 @@ def test_software_direct_upload_init_local(monkeypatch):
 
 def test_software_direct_upload_init_multipart(monkeypatch):
     from app.api import software
-    from app.core.config import settings
-    from app.services import oss_service as oss_mod
-    from app.services.storage_service import storage_service as _ss
+    from app.shared.core.config import settings
+    from app.shared.services import oss_service as oss_mod
+    from app.shared.services.storage_service import storage_service as _ss
     monkeypatch.setattr(_ss, "_backend", "s3")
     monkeypatch.setattr(oss_mod.oss_service, "create_multipart_upload", lambda *a, **k: "uid-1")
     monkeypatch.setattr(oss_mod.oss_service, "presign_part_upload",
@@ -979,7 +979,7 @@ def test_software_direct_upload_init_multipart(monkeypatch):
     assert data["part_urls"][1] == "https://oss/part2"
     import jwt
 
-    from app.core.config import settings
+    from app.shared.core.config import settings
     claims = jwt.decode(data["token"], settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
     assert claims["mode"] == "multipart"
     assert claims["upload_id"] == "uid-1"
@@ -988,8 +988,8 @@ def test_software_direct_upload_init_multipart(monkeypatch):
 
 def test_software_direct_upload_init_single(monkeypatch):
     from app.api import software
-    from app.services import oss_service as oss_mod
-    from app.services.storage_service import storage_service as _ss
+    from app.shared.services import oss_service as oss_mod
+    from app.shared.services.storage_service import storage_service as _ss
     monkeypatch.setattr(_ss, "_backend", "s3")
     monkeypatch.setattr(oss_mod.oss_service, "presign_single_put", lambda *a, **k: "https://oss/single")
     db = MagicMock()
@@ -1005,8 +1005,8 @@ def test_software_direct_upload_init_single(monkeypatch):
 
 def test_software_direct_upload_complete_multipart(monkeypatch):
     from app.api import software
-    from app.services import oss_service as oss_mod
-    from app.services.storage_service import storage_service as _ss
+    from app.shared.services import oss_service as oss_mod
+    from app.shared.services.storage_service import storage_service as _ss
     monkeypatch.setattr(_ss, "_backend", "s3")
     monkeypatch.setattr(oss_mod.oss_service, "complete_multipart_upload", lambda *a, **k: None)
     monkeypatch.setattr(oss_mod.oss_service, "head_object", lambda *a, **k: True)
@@ -1023,8 +1023,8 @@ def test_software_direct_upload_complete_multipart(monkeypatch):
 
 def test_software_direct_upload_complete_single(monkeypatch):
     from app.api import software
-    from app.services import oss_service as oss_mod
-    from app.services.storage_service import storage_service as _ss
+    from app.shared.services import oss_service as oss_mod
+    from app.shared.services.storage_service import storage_service as _ss
     monkeypatch.setattr(_ss, "_backend", "s3")
     monkeypatch.setattr(oss_mod.oss_service, "head_object", lambda *a, **k: True)
     monkeypatch.setattr(oss_mod.oss_service, "delete_file", lambda *a, **k: None)
@@ -1038,20 +1038,20 @@ def test_software_direct_upload_complete_single(monkeypatch):
 
 def test_software_direct_upload_complete_single_missing(monkeypatch):
     from app.api import software
-    from app.services import oss_service as oss_mod
-    from app.services.storage_service import storage_service as _ss
+    from app.shared.services import oss_service as oss_mod
+    from app.shared.services.storage_service import storage_service as _ss
     monkeypatch.setattr(_ss, "_backend", "s3")
     monkeypatch.setattr(oss_mod.oss_service, "head_object", lambda *a, **k: False)
     token = _direct_upload_token({"mode": "single"})
-    from app.domain.catalog import CatalogError
+    from app.shared.domain.catalog import CatalogError
     with pytest.raises(CatalogError):
         asyncio.run(software.upload_complete(software.UploadCompleteBody(token=token), db=MagicMock(), user=_user()))
 
 
 def test_software_direct_upload_abort(monkeypatch):
     from app.api import software
-    from app.services import oss_service as oss_mod
-    from app.services.storage_service import storage_service as _ss
+    from app.shared.services import oss_service as oss_mod
+    from app.shared.services.storage_service import storage_service as _ss
     monkeypatch.setattr(_ss, "_backend", "s3")
     called = {}
     monkeypatch.setattr(oss_mod.oss_service, "abort_multipart_upload", lambda *a, **k: called.setdefault("aborted", True))
@@ -1062,6 +1062,6 @@ def test_software_direct_upload_abort(monkeypatch):
 
 def test_software_direct_upload_bad_token():
     from app.api import software
-    from app.domain.catalog import CatalogError
+    from app.shared.domain.catalog import CatalogError
     with pytest.raises(CatalogError):
         asyncio.run(software.upload_complete(software.UploadCompleteBody(token="bad"), db=MagicMock(), user=_user()))

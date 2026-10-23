@@ -11,12 +11,12 @@ from pydantic import BaseModel
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_db, require_member
-from app.core.utils import ok
-from app.models.chat_message import ChatMessage
-from app.models.chat_session import ChatSession
-from app.models.user import User
 from app.modules.knowledge.provider import knowledge
+from app.shared.core.dependencies import get_db, require_member
+from app.shared.core.utils import ok
+from app.shared.models.chat_message import ChatMessage
+from app.shared.models.chat_session import ChatSession
+from app.shared.models.user import User
 
 router = APIRouter()
 

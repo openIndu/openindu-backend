@@ -4,10 +4,10 @@ from datetime import datetime
 from sqlalchemy import func, literal_column
 from sqlalchemy.orm import Session
 
-from app.models.admin_audit_log import AdminAuditLog
-from app.models.user import User
-from app.models.visit_event import VisitEvent
 from app.modules.analytics.infrastructure.geo import lookup_point
+from app.shared.models.admin_audit_log import AdminAuditLog
+from app.shared.models.user import User
+from app.shared.models.visit_event import VisitEvent
 
 
 def cst_day(timestamp):

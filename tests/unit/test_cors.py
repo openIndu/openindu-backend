@@ -1,7 +1,7 @@
 """CORS wiring: the web app answers credentialed CORS requests for the configured allow-list only."""
 from fastapi.testclient import TestClient
 
-from app.core.config import settings
+from app.shared.core.config import settings
 from app.web_app import app
 
 client = TestClient(app)

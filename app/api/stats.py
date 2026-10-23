@@ -6,14 +6,6 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_db, require_admin
-from app.core.utils import iso_utc, mask_phone, ok
-from app.models.chat_message import ChatMessage
-from app.models.document import Document
-from app.models.login_session import LoginSession
-from app.models.software import Software
-from app.models.user import User
-from app.models.visit_event import VisitEvent
 from app.modules.analytics.domain.windows import (
     CST,
 )
@@ -62,6 +54,14 @@ from app.modules.analytics.infrastructure.visit_queries import (
 from app.modules.analytics.infrastructure.visit_queries import (
     yearly_registrations as _yearly_registrations,
 )
+from app.shared.core.dependencies import get_db, require_admin
+from app.shared.core.utils import iso_utc, mask_phone, ok
+from app.shared.models.chat_message import ChatMessage
+from app.shared.models.document import Document
+from app.shared.models.login_session import LoginSession
+from app.shared.models.software import Software
+from app.shared.models.user import User
+from app.shared.models.visit_event import VisitEvent
 
 router = APIRouter(prefix="/stats")
 

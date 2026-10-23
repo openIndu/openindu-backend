@@ -6,8 +6,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 
-from app.core.config import settings
-from app.services.storage_service import storage_service
+from app.shared.core.config import settings
+from app.shared.services.storage_service import storage_service
 
 router = APIRouter(prefix="/files")
 DEBUG_PLACEHOLDERS = {

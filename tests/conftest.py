@@ -17,23 +17,23 @@ if os.path.exists(TEST_DB_PATH):
 
 # Now import app modules - they'll use the shared file database
 # Import ALL model modules so they register with Base.metadata
-import app.models.admin_audit_log  # noqa
-import app.models.chat_log  # noqa
-import app.models.document  # noqa
-import app.models.download_log  # noqa
-import app.models.login_session  # noqa
-import app.models.portal_content  # noqa
-import app.models.slider_challenge  # noqa
-import app.models.sms_code  # noqa
-import app.models.software  # noqa
-import app.models.sync_log  # noqa
-import app.models.token_blacklist  # noqa
-import app.models.user  # noqa
-import app.models.visit_event  # noqa
+import app.shared.models.admin_audit_log  # noqa
+import app.shared.models.chat_log  # noqa
+import app.shared.models.document  # noqa
+import app.shared.models.download_log  # noqa
+import app.shared.models.login_session  # noqa
+import app.shared.models.portal_content  # noqa
+import app.shared.models.slider_challenge  # noqa
+import app.shared.models.sms_code  # noqa
+import app.shared.models.software  # noqa
+import app.shared.models.sync_log  # noqa
+import app.shared.models.token_blacklist  # noqa
+import app.shared.models.user  # noqa
+import app.shared.models.visit_event  # noqa
 
 # Create all database tables on the app's engine (shared file)
-from app.core.database import engine
-from app.models import Base
+from app.shared.core.database import engine
+from app.shared.models import Base
 
 Base.metadata.create_all(bind=engine)
 

@@ -2,7 +2,7 @@
 
 from typing import Protocol
 
-from app.domain.auth import AuthError, BizCode
+from app.shared.domain.auth import AuthError, BizCode
 
 
 class AccountState(Protocol):

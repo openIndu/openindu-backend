@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.services.file_storage import FileStorageService
+from app.shared.services.file_storage import FileStorageService
 
 
 class TestFileStorageService:
@@ -14,7 +14,7 @@ class TestFileStorageService:
     @pytest.fixture(autouse=True)
     def setup(self, monkeypatch, temp_data_dir):
         """Override DATA_DIR to a temp directory and create a fresh FileStorageService."""
-        from app.core.config import settings
+        from app.shared.core.config import settings
         monkeypatch.setattr(settings, "DATA_DIR", temp_data_dir)
         # Create a fresh instance that picks up the patched settings
         self.storage = FileStorageService()

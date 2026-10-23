@@ -4,9 +4,9 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Protocol
 
-from app.domain.auth import AuthError, BizCode
 from app.modules.identity.domain import verification_policy as policy
 from app.modules.identity.domain.phone import require_valid_phone
+from app.shared.domain.auth import AuthError, BizCode
 
 CODE_LIFETIME_SECONDS = 300
 

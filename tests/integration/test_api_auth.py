@@ -59,7 +59,7 @@ def _make_token_pair():
 
 def _fake_context(account=None, outcome=None, is_new_user=False, pair=None):
     """A patched identity context with configured fake use cases."""
-    from app.domain.auth import BizCode
+    from app.shared.domain.auth import BizCode
 
     pair = pair or _make_token_pair()
     ctx = MagicMock()
@@ -78,7 +78,7 @@ def _make_client(app, auth_user=None):
     """
     from fastapi.testclient import TestClient
 
-    from app.core.dependencies import get_db, require_admin, require_auth, require_member
+    from app.shared.core.dependencies import get_db, require_admin, require_auth, require_member
 
     # Clear previous overrides for test isolation
     app.dependency_overrides.clear()
@@ -143,7 +143,7 @@ class TestRegisterAndLogin:
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        from app.domain.auth import BizCode
+        from app.shared.domain.auth import BizCode
         from app.web_app import app
 
         self.app = app
@@ -166,7 +166,7 @@ class TestRegisterAndLogin:
 
     def test_register_duplicate(self):
         """Registering same phone twice should fail."""
-        from app.domain.auth import AuthError, BizCode
+        from app.shared.domain.auth import AuthError, BizCode
 
         client = _make_client(self.app)
         ctx = _fake_context()
@@ -188,7 +188,7 @@ class TestRegisterAndLogin:
 
     def test_login_unregistered(self):
         """Login with unregistered phone should fail."""
-        from app.domain.auth import AuthError, BizCode
+        from app.shared.domain.auth import AuthError, BizCode
 
         client = _make_client(self.app)
         ctx = _fake_context()
@@ -267,7 +267,7 @@ class TestRegisterAndLogin:
 
         import jwt
 
-        from app.core.config import settings
+        from app.shared.core.config import settings
         payload = {
             "sub": "1",
             "phone": "13800138007",
@@ -302,10 +302,10 @@ class TestSliderCaptcha:
     def setup(self):
         from fastapi.testclient import TestClient
 
-        from app.core.database import SessionLocal
-        from app.core.dependencies import get_db
-        from app.models.slider_challenge import SliderChallenge
-        from app.models.sms_code import SmsCode
+        from app.shared.core.database import SessionLocal
+        from app.shared.core.dependencies import get_db
+        from app.shared.models.slider_challenge import SliderChallenge
+        from app.shared.models.sms_code import SmsCode
         from app.web_app import app
 
         db = SessionLocal()
@@ -332,7 +332,7 @@ class TestSliderCaptcha:
         db.close()
 
     def _issue(self):
-        from app.models.slider_challenge import SliderChallenge
+        from app.shared.models.slider_challenge import SliderChallenge
 
         data = self.client.get("/api/v1/auth/slider-captcha").json()["data"]
         row = self.db.query(SliderChallenge).filter(

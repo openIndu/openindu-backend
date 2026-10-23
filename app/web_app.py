@@ -27,33 +27,33 @@ from app.api import (
     users,
     visits,
 )
-from app.core.config import settings
-from app.core.database import engine
-from app.core.err_code import ErrorCode
-from app.domain.auth import AuthError
-from app.domain.catalog import CatalogError
-from app.domain.knowledge import KnowledgeError
-from app.domain.membership import MemberError
-from app.middleware.admin_audit import AdminAuditMiddleware
-from app.middleware.online_stats import OnlineStatsMiddleware
-from app.middleware.token_blacklist import TokenBlacklistMiddleware
-from app.models import Base
-from app.models.admin_audit_log import AdminAuditLog  # noqa: F401
-from app.models.chat_log import ChatLog  # noqa: F401
-from app.models.chat_message import ChatMessage  # noqa: F401
-from app.models.chat_session import ChatSession  # noqa: F401
-from app.models.document import Document  # noqa: F401
-from app.models.download_log import DownloadLog  # noqa: F401
-from app.models.login_session import LoginSession  # noqa: F401
-from app.models.portal_content import PortalContent  # noqa: F401
-from app.models.resource_tag import ResourceTag  # noqa: F401
-from app.models.sms_code import SmsCode  # noqa: F401
-from app.models.software import Software, SoftwareVersion  # noqa: F401
-from app.models.sync_log import SyncLog  # noqa: F401
-from app.models.token_blacklist import TokenBlacklist  # noqa: F401
-from app.models.user import User  # noqa: F401
-from app.models.visit_event import VisitEvent  # noqa: F401
-from app.tasks.maintenance_task import MaintenanceScheduler
+from app.shared.core.config import settings
+from app.shared.core.database import engine
+from app.shared.core.err_code import ErrorCode
+from app.shared.domain.auth import AuthError
+from app.shared.domain.catalog import CatalogError
+from app.shared.domain.knowledge import KnowledgeError
+from app.shared.domain.membership import MemberError
+from app.shared.middleware.admin_audit import AdminAuditMiddleware
+from app.shared.middleware.online_stats import OnlineStatsMiddleware
+from app.shared.middleware.token_blacklist import TokenBlacklistMiddleware
+from app.shared.models import Base
+from app.shared.models.admin_audit_log import AdminAuditLog  # noqa: F401
+from app.shared.models.chat_log import ChatLog  # noqa: F401
+from app.shared.models.chat_message import ChatMessage  # noqa: F401
+from app.shared.models.chat_session import ChatSession  # noqa: F401
+from app.shared.models.document import Document  # noqa: F401
+from app.shared.models.download_log import DownloadLog  # noqa: F401
+from app.shared.models.login_session import LoginSession  # noqa: F401
+from app.shared.models.portal_content import PortalContent  # noqa: F401
+from app.shared.models.resource_tag import ResourceTag  # noqa: F401
+from app.shared.models.sms_code import SmsCode  # noqa: F401
+from app.shared.models.software import Software, SoftwareVersion  # noqa: F401
+from app.shared.models.sync_log import SyncLog  # noqa: F401
+from app.shared.models.token_blacklist import TokenBlacklist  # noqa: F401
+from app.shared.models.user import User  # noqa: F401
+from app.shared.models.visit_event import VisitEvent  # noqa: F401
+from app.shared.tasks.maintenance_task import MaintenanceScheduler
 
 logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address, default_limits=["50/second"])

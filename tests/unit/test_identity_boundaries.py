@@ -6,8 +6,11 @@ from pathlib import Path
 APP = Path(__file__).resolve().parents[2] / "app"
 MODULES = APP / "modules"
 
+# What app/ may hold. Business code goes under modules/, code shared by the contexts under shared/.
+APP_ENTRIES = {"__init__.py", "api", "mcp", "mcp_app.py", "modules", "shared", "web_app.py"}
+
 CONTEXTS = ("identity", "membership", "catalog", "analytics", "knowledge")
-PROHIBITED = ("app.api", "app.core", "app.models", "app.services", "fastapi", "sqlalchemy")
+PROHIBITED = ("app.api", "app.shared.core", "app.shared.models", "app.shared.services", "fastapi", "sqlalchemy")
 PROHIBITED += tuple(f"app.modules.{context}.infrastructure" for context in CONTEXTS)
 
 
@@ -20,6 +23,14 @@ def imports(path: Path) -> set[str]:
         elif isinstance(node, ast.ImportFrom) and node.module:
             names.add(node.module)
     return names
+
+
+def test_app_top_level_stays_grouped():
+    entries = {path.name for path in APP.iterdir() if path.name != "__pycache__"}
+    assert entries == APP_ENTRIES, (
+        f"extra under app/: {sorted(entries - APP_ENTRIES)}, missing: {sorted(APP_ENTRIES - entries)}; "
+        "business code belongs in app/modules and shared code in app/shared"
+    )
 
 
 def test_contexts_do_not_import_each_other():

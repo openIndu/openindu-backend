@@ -14,7 +14,7 @@ class TestSettings:
         with patch.dict(os.environ, {
             "DATABASE_URL": "postgresql://test:test@localhost:5432/testdb",
         }, clear=True):
-            from app.core.config import Settings
+            from app.shared.core.config import Settings
             s = Settings(_env_file=None)  # type: ignore[call-arg]
             assert s.STORAGE_BACKEND == "local"
             assert s.JWT_ALGORITHM == "HS256"
@@ -34,7 +34,7 @@ class TestSettings:
             "ACCESS_TOKEN_EXPIRE_MINUTES": "30",
             "SMS_MOCK_ENABLED": "false",
         }, clear=True):
-            from app.core.config import Settings
+            from app.shared.core.config import Settings
             s = Settings(_env_file=None)  # type: ignore[call-arg]
             assert s.STORAGE_BACKEND == "s3"
             assert s.JWT_ALGORITHM == "RS256"
@@ -46,7 +46,7 @@ class TestSettings:
         with patch.dict(os.environ, {
             "DATABASE_URL": "sqlite:///test.db",
         }, clear=True):
-            from app.core.config import Settings
+            from app.shared.core.config import Settings
             s = Settings(_env_file=None)  # type: ignore[call-arg]
             assert s.DATA_DIR == "/data/files"
             assert s.OSS_ENDPOINT == "http://localhost:9000"
@@ -58,7 +58,7 @@ class TestSettings:
         with patch.dict(os.environ, {
             "DATABASE_URL": "sqlite:///test.db",
         }, clear=True):
-            from app.core.config import Settings
+            from app.shared.core.config import Settings
             s = Settings(_env_file=None)  # type: ignore[call-arg]
             assert s.DOWNLOAD_DAILY_LIMIT == 5
             assert s.PRESIGNED_URL_EXPIRE_MINUTES == 5
@@ -70,7 +70,7 @@ class TestSettings:
         with patch.dict(os.environ, {
             "DATABASE_URL": "sqlite:///test.db",
         }, clear=True):
-            from app.core.config import Settings
+            from app.shared.core.config import Settings
             s = Settings(_env_file=None)  # type: ignore[call-arg]
             assert s.cors_origins == [
                 "https://openindu.com",
@@ -86,7 +86,7 @@ class TestSettings:
             "DATABASE_URL": "sqlite:///test.db",
             "CORS_ALLOW_ORIGINS": " https://a.example , https://b.example:8443,, ",
         }, clear=True):
-            from app.core.config import Settings
+            from app.shared.core.config import Settings
             s = Settings(_env_file=None)  # type: ignore[call-arg]
             assert s.cors_origins == ["https://a.example", "https://b.example:8443"]
 
@@ -96,7 +96,7 @@ class TestSettings:
             "DATABASE_URL": "sqlite:///test.db",
             "CORS_ALLOW_ORIGINS": "",
         }, clear=True):
-            from app.core.config import Settings
+            from app.shared.core.config import Settings
             s = Settings(_env_file=None)  # type: ignore[call-arg]
             assert s.cors_origins == []
 
@@ -107,6 +107,6 @@ class TestSettings:
             "DATABASE_URL": "sqlite:///test.db",
             "CORS_ALLOW_ORIGINS": value,
         }, clear=True):
-            from app.core.config import Settings
+            from app.shared.core.config import Settings
             with pytest.raises(ValidationError, match="explicit origins"):
                 Settings(_env_file=None)  # type: ignore[call-arg]

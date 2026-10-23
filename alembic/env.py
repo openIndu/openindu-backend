@@ -4,19 +4,19 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
-from app.core.config import settings
-from app.models import Base
-from app.models.admin_audit_log import AdminAuditLog  # noqa: F401
-from app.models.brand_mapping import BrandMapping  # noqa: F401
-from app.models.document import Document  # noqa: F401
-from app.models.download_log import DownloadLog  # noqa: F401
-from app.models.login_session import LoginSession  # noqa: F401
-from app.models.portal_content import PortalContent  # noqa: F401
-from app.models.sms_code import SmsCode  # noqa: F401
-from app.models.software import Software, SoftwareVersion  # noqa: F401
-from app.models.sync_log import SyncLog  # noqa: F401
-from app.models.token_blacklist import TokenBlacklist  # noqa: F401
-from app.models.user import User  # noqa: F401
+from app.shared.core.config import settings
+from app.shared.models import Base
+from app.shared.models.admin_audit_log import AdminAuditLog  # noqa: F401
+from app.shared.models.brand_mapping import BrandMapping  # noqa: F401
+from app.shared.models.document import Document  # noqa: F401
+from app.shared.models.download_log import DownloadLog  # noqa: F401
+from app.shared.models.login_session import LoginSession  # noqa: F401
+from app.shared.models.portal_content import PortalContent  # noqa: F401
+from app.shared.models.sms_code import SmsCode  # noqa: F401
+from app.shared.models.software import Software, SoftwareVersion  # noqa: F401
+from app.shared.models.sync_log import SyncLog  # noqa: F401
+from app.shared.models.token_blacklist import TokenBlacklist  # noqa: F401
+from app.shared.models.user import User  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)

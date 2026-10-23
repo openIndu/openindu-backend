@@ -2,12 +2,12 @@
 import sqlalchemy
 from sqlalchemy.orm import Session
 
-from app.core.database import SessionLocal
-from app.models.chat_log import ChatLog
-from app.models.chat_message import ChatMessage
-from app.models.chat_session import ChatSession
-from app.models.resource_tag import ResourceTag
 from app.modules.knowledge.infrastructure.milvus import milvus_service
+from app.shared.core.database import SessionLocal
+from app.shared.models.chat_log import ChatLog
+from app.shared.models.chat_message import ChatMessage
+from app.shared.models.chat_session import ChatSession
+from app.shared.models.resource_tag import ResourceTag
 
 
 class SqlConsultationLedger:

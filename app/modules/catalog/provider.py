@@ -3,8 +3,6 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
-from app.core.utils import utcnow
 from app.modules.catalog.application.admin import (
     AddSoftwareVersion,
     BulkDeleteSoftwareVersions,
@@ -50,6 +48,8 @@ from app.modules.catalog.infrastructure.storage import (
     StoragePackageUploader,
 )
 from app.modules.catalog.infrastructure.tokens import JwtUploadTokenCodec
+from app.shared.core.config import settings
+from app.shared.core.utils import utcnow
 
 MB = 1024 * 1024
 

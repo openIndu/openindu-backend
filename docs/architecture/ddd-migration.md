@@ -13,8 +13,13 @@ app/
   mcp/                     MCP tool adapters
   modules/                 one package per business context
     identity/  membership/  catalog/  analytics/  knowledge/
-  core/  domain/  models/  services/  middleware/  tasks/
-                           code shared by the contexts
+  shared/                  code shared by the contexts
+    core/                  settings, database session, request dependencies, error-code table, helpers
+    domain/                error codes and exceptions of each context
+    models/                SQLAlchemy models
+    services/              storage (local and OSS) and SMS adapters
+    middleware/            ASGI middleware
+    tasks/                 scheduled jobs
 ```
 
 The contexts never import each other; they depend only on the shared layers, and
@@ -39,8 +44,10 @@ The migrated contexts follow the same layout (`app/modules/identity/`, `app/modu
 - `provider.py` is the composition root wiring adapters into use cases.
 - The `api/*.py` files are thin adapters for the existing routes.
 
-New domain behavior belongs in the owning context, not in `api/` or a global
-`services/` directory. Dependencies point inward: API and infrastructure may
+New domain behavior belongs in the owning context, not in `api/` or
+`shared/services/`. New top-level entries under `app/` need a decision: the layout
+test fails until the list in `tests/unit/test_identity_boundaries.py` and this
+document agree. Dependencies point inward: API and infrastructure may
 depend on application/domain; application depends on domain and ports; domain
 depends only on the shared error codes and the standard library. The boundary
 test (`tests/unit/test_identity_boundaries.py`) enforces the latter two layers

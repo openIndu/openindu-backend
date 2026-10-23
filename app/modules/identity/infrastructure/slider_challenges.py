@@ -6,7 +6,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.models.slider_challenge import SliderChallenge
+from app.shared.models.slider_challenge import SliderChallenge
 
 
 class SqlSliderChallengeRepository:

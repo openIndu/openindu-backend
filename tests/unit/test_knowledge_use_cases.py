@@ -4,7 +4,6 @@ import json
 
 import pytest
 
-from app.domain.knowledge import KnowledgeCode, KnowledgeError
 from app.modules.knowledge.application.answering import StreamAnswer
 from app.modules.knowledge.application.consultation import (
     EnsureChatQuota,
@@ -20,6 +19,7 @@ from app.modules.knowledge.application.sessions import (
     RenameChatSession,
     SetMessageFeedback,
 )
+from app.shared.domain.knowledge import KnowledgeCode, KnowledgeError
 
 
 def _chunk(name, page, score, brand="siemens", text="t"):

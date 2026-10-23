@@ -1,6 +1,6 @@
 """Storage adapters for the catalog context."""
-from app.core.utils import oss_key_for_upload
-from app.services.storage_service import storage_service
+from app.shared.core.utils import oss_key_for_upload
+from app.shared.services.storage_service import storage_service
 
 
 class StoragePackageUploader:

@@ -8,8 +8,6 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
-from app.core.utils import utcnow
 from app.modules.identity.application.authenticate import AuthenticateBySms
 from app.modules.identity.application.captcha import (
     ConsumeSliderTicket,
@@ -28,6 +26,8 @@ from app.modules.identity.infrastructure.accounts import SqlAccountRepository
 from app.modules.identity.infrastructure.slider_challenges import PilChallengeRenderer, SqlSliderChallengeRepository
 from app.modules.identity.infrastructure.tokens import JwtTokenCodec, SqlLoginSessionStore, SqlTokenBlacklist
 from app.modules.identity.infrastructure.verification_codes import ProviderSmsGateway, SqlCodeStore
+from app.shared.core.config import settings
+from app.shared.core.utils import utcnow
 
 
 @dataclass(frozen=True)

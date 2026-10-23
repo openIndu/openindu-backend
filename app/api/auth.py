@@ -8,12 +8,12 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_db, require_auth
-from app.core.utils import ok, real_client_ip
-from app.domain.auth import BizCode
-from app.models.user import User
 from app.modules.identity.application.authenticate import AuthenticationIntent
 from app.modules.identity.provider import identity
+from app.shared.core.dependencies import get_db, require_auth
+from app.shared.core.utils import ok, real_client_ip
+from app.shared.domain.auth import BizCode
+from app.shared.models.user import User
 
 router = APIRouter(prefix="/auth")
 limiter = Limiter(key_func=get_remote_address)

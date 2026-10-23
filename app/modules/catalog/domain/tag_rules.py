@@ -1,5 +1,5 @@
 """Resource tag rules without framework dependencies."""
-from app.domain.catalog import CatalogCode, CatalogError
+from app.shared.domain.catalog import CatalogCode, CatalogError
 
 VALID_TAG_TYPES = {"doc_brand", "sw_brand", "doc_category", "sw_category", "doc_series"}
 SERIES_TYPES = {"doc_series"}

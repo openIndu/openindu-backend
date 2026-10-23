@@ -1,5 +1,5 @@
 """Input rules for knowledge consultations and chat sessions."""
-from app.domain.knowledge import KnowledgeCode, KnowledgeError
+from app.shared.domain.knowledge import KnowledgeCode, KnowledgeError
 
 
 def require_non_empty_question(question: str) -> str:

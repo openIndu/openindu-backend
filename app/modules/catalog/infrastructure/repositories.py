@@ -4,11 +4,11 @@ from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.domain.catalog import CatalogCode, CatalogError
-from app.models.document import Document
-from app.models.download_log import DownloadLog
-from app.models.resource_tag import ResourceTag
-from app.models.software import Software, SoftwareVersion
+from app.shared.domain.catalog import CatalogCode, CatalogError
+from app.shared.models.document import Document
+from app.shared.models.download_log import DownloadLog
+from app.shared.models.resource_tag import ResourceTag
+from app.shared.models.software import Software, SoftwareVersion
 
 
 def _duplicate_oss_key(exc: IntegrityError) -> bool:

@@ -1,8 +1,8 @@
 """Resource tag use cases: create, rename with cascades, delete with guards."""
 from typing import Protocol
 
-from app.domain.catalog import CatalogCode, CatalogError
 from app.modules.catalog.domain import tag_rules
+from app.shared.domain.catalog import CatalogCode, CatalogError
 
 
 class TagEntry(Protocol):

@@ -2,11 +2,11 @@
 
 from unittest.mock import MagicMock, patch
 
-from app.tasks.maintenance_task import MaintenanceScheduler
+from app.shared.tasks.maintenance_task import MaintenanceScheduler
 
 
 def test_scheduler_registers_only_authentication_maintenance():
-    with patch("app.tasks.maintenance_task.BackgroundScheduler") as scheduler_class:
+    with patch("app.shared.tasks.maintenance_task.BackgroundScheduler") as scheduler_class:
         scheduler = MagicMock()
         scheduler.running = False
         scheduler_class.return_value = scheduler

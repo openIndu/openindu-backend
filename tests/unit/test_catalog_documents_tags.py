@@ -5,8 +5,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.core.err_code import ErrorCode
-from app.domain.catalog import CatalogCode, CatalogError
 from app.modules.catalog.application.documents import (
     BulkSetDocumentPublishing,
     DeleteDocument,
@@ -20,6 +18,8 @@ from app.modules.catalog.application.documents import (
 )
 from app.modules.catalog.application.tags import CreateTag, DeleteTag, UpdateTag
 from app.modules.catalog.domain.rules import PENDING, PUBLISHED, REJECTED
+from app.shared.core.err_code import ErrorCode
+from app.shared.domain.catalog import CatalogCode, CatalogError
 
 
 def _doc(**overrides):

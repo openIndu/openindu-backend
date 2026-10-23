@@ -4,7 +4,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.domain.catalog import CatalogCode, CatalogError
 from app.modules.catalog.application.admin import BulkDeleteSoftwareVersions, VersionCriteria
 from app.modules.catalog.application.downloads import IssueSoftwareDownloadLink
 from app.modules.catalog.application.submissions import (
@@ -14,6 +13,7 @@ from app.modules.catalog.application.submissions import (
     SubmitSoftwarePackage,
 )
 from app.modules.catalog.domain import rules
+from app.shared.domain.catalog import CatalogCode, CatalogError
 
 NOW = datetime(2026, 10, 22, 12, 0, 0)
 

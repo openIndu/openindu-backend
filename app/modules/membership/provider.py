@@ -3,7 +3,6 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from app.core.utils import mask_phone, utcnow
 from app.modules.membership.application.administration import (
     BlacklistUser,
     ChangeRole,
@@ -18,6 +17,7 @@ from app.modules.membership.infrastructure.repositories import (
     SqlLoginSessionDeactivator,
     SqlUserStore,
 )
+from app.shared.core.utils import mask_phone, utcnow
 
 
 @dataclass(frozen=True)

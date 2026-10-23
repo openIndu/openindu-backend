@@ -3,7 +3,6 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.modules.knowledge.application.answering import StreamAnswer
 from app.modules.knowledge.application.consultation import (
     EnsureChatQuota,
@@ -29,6 +28,7 @@ from app.modules.knowledge.infrastructure.repositories import (
     SqlConsultationLedger,
     SqlSessionDirectory,
 )
+from app.shared.core.config import settings
 
 
 @dataclass

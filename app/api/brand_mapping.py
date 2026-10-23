@@ -3,10 +3,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_db, require_auth
-from app.core.utils import ok
-from app.models.brand_mapping import BrandMapping
-from app.models.user import User
+from app.shared.core.dependencies import get_db, require_auth
+from app.shared.core.utils import ok
+from app.shared.models.brand_mapping import BrandMapping
+from app.shared.models.user import User
 
 router = APIRouter(prefix="/brand-mapping")
 

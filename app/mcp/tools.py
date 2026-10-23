@@ -1,6 +1,6 @@
 """MCP tool definitions aligned with document categories."""
-from app.core.database import SessionLocal
 from app.modules.knowledge.infrastructure.milvus import milvus_service
+from app.shared.core.database import SessionLocal
 
 
 def _search(keyword: str, top_k: int, brand: str | None = None, category: str | None = None):
@@ -47,7 +47,7 @@ def get_brand_mapping(source_brand: str, target_brand: str, item: str):
     """Query cross-brand PLC address/instruction mappings from the database."""
     from sqlalchemy import or_
 
-    from app.models.brand_mapping import BrandMapping
+    from app.shared.models.brand_mapping import BrandMapping
 
     db = SessionLocal()
     try:
@@ -87,7 +87,7 @@ def get_brand_mapping(source_brand: str, target_brand: str, item: str):
 
 def list_available_documents(brand: str | None = None, category: str | None = None):
     """List available documents from the database, filtered by brand/category."""
-    from app.models.document import Document
+    from app.shared.models.document import Document
 
     db = SessionLocal()
     try:
@@ -143,7 +143,7 @@ def compare_plc_specs(brand_a: str, brand_b: str, keyword: str = "", top_k: int 
 
 def list_available_software(brand: str | None = None, category: str | None = None):
     """List available software from the database, filtered by brand/category."""
-    from app.models.software import Software
+    from app.shared.models.software import Software
 
     db = SessionLocal()
     try:

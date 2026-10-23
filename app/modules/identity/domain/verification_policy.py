@@ -6,7 +6,7 @@ truth (see ``app.core.err_code``).
 import math
 from datetime import datetime
 
-from app.domain.auth import AuthError, BizCode
+from app.shared.domain.auth import AuthError, BizCode
 
 # Per-phone send-code limits: minimum seconds between two SMS and the
 # per-natural-day cap.

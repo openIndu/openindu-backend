@@ -4,8 +4,8 @@ from datetime import UTC, datetime, timedelta
 import jwt
 from jwt import PyJWTError
 
-from app.core.config import settings
-from app.domain.catalog import CatalogCode, CatalogError
+from app.shared.core.config import settings
+from app.shared.domain.catalog import CatalogCode, CatalogError
 
 TOKEN_LIFETIME_HOURS = 2
 

@@ -4,20 +4,20 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.audit import add_audit_detail
-from app.core.dependencies import get_current_user, get_db, require_admin, require_member
-from app.core.utils import iso_utc, ok
-from app.models.resource_tag import ResourceTag
-from app.models.software import Software, SoftwareVersion
-from app.models.user import User
 from app.modules.catalog.application.admin import VersionCriteria
 from app.modules.catalog.provider import catalog
+from app.shared.core.audit import add_audit_detail
+from app.shared.core.dependencies import get_current_user, get_db, require_admin, require_member
+from app.shared.core.utils import iso_utc, ok
+from app.shared.models.resource_tag import ResourceTag
+from app.shared.models.software import Software, SoftwareVersion
+from app.shared.models.user import User
 
 router = APIRouter(prefix="/software")
 
 
 def _ip(request: Request):
-    from app.core.utils import real_client_ip
+    from app.shared.core.utils import real_client_ip
     return real_client_ip(request)
 
 
