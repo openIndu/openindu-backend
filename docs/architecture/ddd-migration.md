@@ -18,7 +18,7 @@ The migrated contexts follow the same layout (`app/identity/`, `app/membership/`
   or delivery code.
 - `application/` coordinates use cases through ports (repositories, gateways,
   audit log, clock). It owns the outcome, not HTTP messages.
-- `infrastructure/` implements the ports against SQLAlchemy, jose/PIL and the
+- `infrastructure/` implements the ports against SQLAlchemy, PyJWT/PIL and the
   shared SMS client.
 - `provider.py` is the composition root wiring adapters into use cases.
 - The `api/*.py` files are thin adapters for the existing routes.

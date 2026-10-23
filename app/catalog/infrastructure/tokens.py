@@ -1,7 +1,8 @@
 """Signed upload-token carrier between /upload/init and /upload/complete."""
 from datetime import UTC, datetime, timedelta
 
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError
 
 from app.core.config import settings
 from app.domain.catalog import CatalogCode, CatalogError
@@ -19,5 +20,5 @@ class JwtUploadTokenCodec:
     def decode(self, token: str) -> dict:
         try:
             return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        except JWTError as exc:
+        except PyJWTError as exc:
             raise CatalogError(CatalogCode.UPLOAD_TOKEN_INVALID, reason=str(exc))

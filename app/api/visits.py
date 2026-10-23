@@ -1,6 +1,6 @@
 """Visit tracking API for dashboard analytics (adapter for the analytics context)."""
 from fastapi import APIRouter, Depends, HTTPException, Request
-from jose import JWTError
+from jwt import PyJWTError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -32,7 +32,7 @@ def _bearer_user_id(request: Request) -> int | None:
         payload = decode_token(auth.split(" ", 1)[1])
         if payload.get("type") == "access" and payload.get("sub"):
             return int(payload["sub"])
-    except (AuthError, HTTPException, JWTError, ValueError):
+    except (AuthError, HTTPException, PyJWTError, ValueError):
         pass
     return None
 

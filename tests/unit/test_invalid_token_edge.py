@@ -1,6 +1,6 @@
 """Invalid or expired Bearer tokens must degrade to anonymous at the edge
 instead of surfacing as 500 (regression: the identity codec raises the
-domain AuthError, which the edge except-clauses must treat like JWTError)."""
+domain AuthError, which the edge except-clauses must treat like PyJWTError)."""
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
