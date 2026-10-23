@@ -14,12 +14,12 @@ from pathlib import Path
 
 import pytest
 
-from app.catalog.infrastructure.tokens import JwtUploadTokenCodec
 from app.core.config import settings
 from app.core.utils import utcnow
 from app.domain.auth import AuthError, BizCode
 from app.domain.catalog import CatalogCode, CatalogError
-from app.identity.infrastructure.tokens import JwtTokenCodec, decode_token
+from app.modules.catalog.infrastructure.tokens import JwtUploadTokenCodec
+from app.modules.identity.infrastructure.tokens import JwtTokenCodec, decode_token
 
 ROOT = Path(__file__).resolve().parents[2]
 HASHES = {"HS256": hashlib.sha256, "HS512": hashlib.sha512}
@@ -146,7 +146,7 @@ def test_app_does_not_import_python_jose():
     assert JOSE_IMPORT.search("from jose import jwt"), "the pattern must match what it guards against"
     app_dir = ROOT / "app"
     sources = list(app_dir.rglob("*.py"))
-    assert (app_dir / "identity" / "infrastructure" / "tokens.py") in sources, "scan must cover the codec"
+    assert (app_dir / "modules" / "identity" / "infrastructure" / "tokens.py") in sources, "scan must cover the codec"
     assert [str(p) for p in sources if JOSE_IMPORT.search(p.read_text(encoding="utf-8"))] == []
 
 

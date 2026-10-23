@@ -4,16 +4,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.catalog.application.admin import BulkDeleteSoftwareVersions, VersionCriteria
-from app.catalog.application.downloads import IssueSoftwareDownloadLink
-from app.catalog.application.submissions import (
+from app.domain.catalog import CatalogCode, CatalogError
+from app.modules.catalog.application.admin import BulkDeleteSoftwareVersions, VersionCriteria
+from app.modules.catalog.application.downloads import IssueSoftwareDownloadLink
+from app.modules.catalog.application.submissions import (
     CompleteDirectUpload,
     PlanDirectUpload,
     ReviewSoftwareSubmission,
     SubmitSoftwarePackage,
 )
-from app.catalog.domain import rules
-from app.domain.catalog import CatalogCode, CatalogError
+from app.modules.catalog.domain import rules
 
 NOW = datetime(2026, 10, 22, 12, 0, 0)
 

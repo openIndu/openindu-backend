@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.domain.auth import AuthError
-from app.identity.infrastructure.tokens import decode_token
 from app.models.token_blacklist import TokenBlacklist
 from app.models.user import User
+from app.modules.identity.infrastructure.tokens import decode_token
 
 security = HTTPBearer(auto_error=False)
 

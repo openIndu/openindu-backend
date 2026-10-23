@@ -11,9 +11,9 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import get_db, require_auth
 from app.core.utils import ok, real_client_ip
 from app.domain.auth import BizCode
-from app.identity.application.authenticate import AuthenticationIntent
-from app.identity.provider import identity
 from app.models.user import User
+from app.modules.identity.application.authenticate import AuthenticationIntent
+from app.modules.identity.provider import identity
 
 router = APIRouter(prefix="/auth")
 limiter = Limiter(key_func=get_remote_address)

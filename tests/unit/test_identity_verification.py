@@ -7,11 +7,11 @@ import pytest
 
 from app.core.utils import utcnow
 from app.domain.auth import AuthError, BizCode
-from app.identity.application.captcha import ConsumeSliderTicket, IssueSliderChallenge, VerifySliderChallenge
-from app.identity.application.verification_codes import SendVerificationCode, SmsDeliveryError, VerifySmsCode
-from app.identity.domain.phone import require_valid_phone
-from app.identity.domain.verification_policy import DAILY_LIMIT, RESEND_INTERVAL_SECONDS
-from app.identity.infrastructure.slider_challenges import PilChallengeRenderer, SqlSliderChallengeRepository
+from app.modules.identity.application.captcha import ConsumeSliderTicket, IssueSliderChallenge, VerifySliderChallenge
+from app.modules.identity.application.verification_codes import SendVerificationCode, SmsDeliveryError, VerifySmsCode
+from app.modules.identity.domain.phone import require_valid_phone
+from app.modules.identity.domain.verification_policy import DAILY_LIMIT, RESEND_INTERVAL_SECONDS
+from app.modules.identity.infrastructure.slider_challenges import PilChallengeRenderer, SqlSliderChallengeRepository
 
 
 class FakeCodeStore:
@@ -187,8 +187,8 @@ class TestSliderCaptcha:
             verify.execute(result.challenge_id, row.x)
 
     def test_out_of_tolerance_fails_and_consumes(self, challenges, db_session):
-        from app.identity.domain.captcha import SLIDER_TOLERANCE
         from app.models.slider_challenge import SliderChallenge
+        from app.modules.identity.domain.captcha import SLIDER_TOLERANCE
 
         issue = IssueSliderChallenge(challenges, PilChallengeRenderer(), random.Random(7), utcnow)
         verify = VerifySliderChallenge(challenges, None, utcnow)
@@ -217,9 +217,9 @@ class TestSliderCaptcha:
             VerifySliderChallenge(challenges, None, utcnow).execute(challenge.id, 200)
 
     def test_ticket_gates_exactly_one_send(self, challenges, db_session):
-        from app.identity.infrastructure.verification_codes import SqlCodeStore
         from app.models.slider_challenge import SliderChallenge
         from app.models.sms_code import SmsCode
+        from app.modules.identity.infrastructure.verification_codes import SqlCodeStore
 
         issue = IssueSliderChallenge(challenges, PilChallengeRenderer(), random.Random(7), utcnow)
         verify = VerifySliderChallenge(challenges, None, utcnow)
@@ -250,8 +250,8 @@ class TestSliderCaptcha:
         assert db_session.query(SmsCode).filter(SmsCode.phone == "13800138000").count() == 0
 
     def test_disabled_gate_skips_the_ticket(self, challenges, db_session):
-        from app.identity.infrastructure.verification_codes import SqlCodeStore
         from app.models.sms_code import SmsCode
+        from app.modules.identity.infrastructure.verification_codes import SqlCodeStore
 
         db_session.query(SmsCode).delete()
         db_session.commit()

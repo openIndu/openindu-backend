@@ -8,15 +8,15 @@ import pytest
 from app.core.config import settings
 from app.core.utils import utcnow
 from app.domain.auth import AuthError, BizCode
-from app.identity.application.sessions import (
+from app.modules.identity.application.sessions import (
     ChangePhone,
     DeleteAccount,
     EndSession,
     IssueTokenPair,
     RefreshSession,
 )
-from app.identity.domain.session_rules import require_new_phone_free
-from app.identity.infrastructure.tokens import JwtTokenCodec, decode_token
+from app.modules.identity.domain.session_rules import require_new_phone_free
+from app.modules.identity.infrastructure.tokens import JwtTokenCodec, decode_token
 
 
 def make_account(**overrides):

@@ -111,9 +111,9 @@ def test_documents_brands_categories():
 
 
 def test_document_series_validation():
-    from app.catalog.domain.rules import require_valid_series
     from app.core.err_code import ErrorCode
     from app.domain.catalog import CatalogCode, CatalogError
+    from app.modules.catalog.domain.rules import require_valid_series
 
     require_valid_series("s7-1200", True)
     require_valid_series(None, False)
@@ -203,7 +203,7 @@ def test_sw_series_tag_type_is_rejected():
 
 @pytest.mark.parametrize("filename,expected", [("setup.exe", ".exe"), ("archive", "")])
 def test_software_ext(filename, expected):
-    from app.catalog.domain.rules import file_ext
+    from app.modules.catalog.domain.rules import file_ext
 
     assert file_ext(filename) == expected
 
@@ -212,7 +212,7 @@ def test_software_download_and_delete(monkeypatch):
     from datetime import datetime
 
     from app.api import software
-    from app.catalog.application.downloads import IssueSoftwareDownloadLink
+    from app.modules.catalog.application.downloads import IssueSoftwareDownloadLink
     from app.services.storage_service import storage_service as storage
 
     assert software.ok()["data"] == {}
@@ -337,7 +337,7 @@ def test_stats_apis(monkeypatch):
 def test_dashboard_page_views_include_unknown_geo_but_exclude_local():
     from sqlalchemy.dialects import postgresql
 
-    from app.analytics.infrastructure import visit_queries
+    from app.modules.analytics.infrastructure import visit_queries
 
     db = MagicMock()
     visit_queries.quality_visit_query(db)
@@ -763,7 +763,7 @@ def test_update_me_helper():
 def test_visit_tracking_records_client_id_and_event_type(monkeypatch):
     from app.api import visits
 
-    monkeypatch.setattr("app.analytics.infrastructure.geo.resolve_ip_geo", lambda ip: {"name": "成都", "country_code": "CN"})
+    monkeypatch.setattr("app.modules.analytics.infrastructure.geo.resolve_ip_geo", lambda ip: {"name": "成都", "country_code": "CN"})
     db = MagicMock()
     body = visits.VisitBody(path="/resources", client_id="client-123", event_type="page_view")
     result = asyncio.run(visits.track_visit(body, _Request("8.8.8.8"), db))
@@ -786,7 +786,7 @@ def test_visit_tracking_rejects_unknown_event_type():
 
 def test_identity_phone_validation():
     from app.domain.auth import AuthError, BizCode
-    from app.identity.domain.phone import require_valid_phone
+    from app.modules.identity.domain.phone import require_valid_phone
 
     with pytest.raises(AuthError) as exc:
         require_valid_phone("1234")
@@ -797,8 +797,8 @@ def test_identity_issue_token_pair():
     from dataclasses import asdict
 
     from app.core.utils import utcnow
-    from app.identity.application.sessions import IssueTokenPair
-    from app.identity.infrastructure.tokens import JwtTokenCodec
+    from app.modules.identity.application.sessions import IssueTokenPair
+    from app.modules.identity.infrastructure.tokens import JwtTokenCodec
 
     account = SimpleNamespace(id=1, phone="13800138000", role="user")
     tokens = asdict(IssueTokenPair(JwtTokenCodec(), None, utcnow, 60, 7).execute(account))
@@ -808,7 +808,7 @@ def test_identity_issue_token_pair():
 
 def test_identity_verify_code():
     from app.core.utils import utcnow
-    from app.identity.application.verification_codes import VerifySmsCode
+    from app.modules.identity.application.verification_codes import VerifySmsCode
 
     record = SimpleNamespace(code="654321", is_used=False, verify_attempts=0)
 
@@ -827,7 +827,7 @@ def test_identity_send_code():
     import random
 
     from app.core.utils import utcnow
-    from app.identity.application.verification_codes import SendVerificationCode
+    from app.modules.identity.application.verification_codes import SendVerificationCode
 
     class Store:
         added = False
@@ -855,8 +855,8 @@ def test_identity_send_code():
 def test_identity_sign_in_rejects_bad_code():
     from app.core.utils import utcnow
     from app.domain.auth import AuthError, BizCode
-    from app.identity.application.authenticate import AuthenticateBySms, AuthenticationIntent
-    from app.identity.application.verification_codes import VerifySmsCode
+    from app.modules.identity.application.authenticate import AuthenticateBySms, AuthenticationIntent
+    from app.modules.identity.application.verification_codes import VerifySmsCode
 
     class Store:
         def latest_active(self, phone, now):
@@ -886,8 +886,8 @@ def test_identity_sign_in_rejects_bad_code():
 
 def test_identity_logout():
     from app.core.utils import utcnow
-    from app.identity.application.sessions import EndSession, IssueTokenPair
-    from app.identity.infrastructure.tokens import JwtTokenCodec
+    from app.modules.identity.application.sessions import EndSession, IssueTokenPair
+    from app.modules.identity.infrastructure.tokens import JwtTokenCodec
 
     class Blacklist:
         added = False
@@ -913,8 +913,8 @@ def test_identity_logout():
 
 def test_identity_decode_token_roundtrip():
     from app.core.utils import utcnow
-    from app.identity.application.sessions import IssueTokenPair
-    from app.identity.infrastructure.tokens import JwtTokenCodec, decode_token
+    from app.modules.identity.application.sessions import IssueTokenPair
+    from app.modules.identity.infrastructure.tokens import JwtTokenCodec, decode_token
 
     account = SimpleNamespace(id=7, phone="13800138000", role="user")
     token = IssueTokenPair(JwtTokenCodec(), None, utcnow, 60, 7).execute(account).access_token

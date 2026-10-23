@@ -6,11 +6,11 @@ from jwt import PyJWTError
 from sqlalchemy.exc import IntegrityError
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.analytics.infrastructure.geo import resolve_ip_geo
 from app.core.database import SessionLocal
 from app.domain.auth import AuthError
-from app.identity.infrastructure.tokens import decode_token
 from app.models.login_session import LoginSession
+from app.modules.analytics.infrastructure.geo import resolve_ip_geo
+from app.modules.identity.infrastructure.tokens import decode_token
 
 
 def _now():

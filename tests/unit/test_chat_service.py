@@ -3,9 +3,9 @@
 These cover the pure prompt/source-building logic — no external packages
 (`openai` / `pymilvus`) are imported, since those deps are loaded lazily.
 """
-from app.knowledge.application.rewriter import RewriteQuery
-from app.knowledge.domain import answering
-from app.knowledge.domain.query_rules import enrich_query, match_brand, rewrite_prompt
+from app.modules.knowledge.application.rewriter import RewriteQuery
+from app.modules.knowledge.domain import answering
+from app.modules.knowledge.domain.query_rules import enrich_query, match_brand, rewrite_prompt
 
 
 def _chunk(name, page, text, brand="siemens", category="plc-manual", score=0.9):

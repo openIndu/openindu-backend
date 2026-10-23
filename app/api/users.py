@@ -6,9 +6,9 @@ from sqlalchemy.orm import Session
 from app.core.audit import self_audited
 from app.core.dependencies import get_db, require_admin
 from app.core.utils import _is_private, ok
-from app.membership.provider import membership
 from app.models.login_session import LoginSession
 from app.models.user import User
+from app.modules.membership.provider import membership
 
 router = APIRouter(prefix="/users")
 

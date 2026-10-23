@@ -43,7 +43,7 @@ def _make_user(id=1, phone="13800138000", role="user"):
 
 def _make_token_pair():
     """A concrete TokenPair so the adapter can serialise it with asdict()."""
-    from app.identity.application.sessions import TokenPair
+    from app.modules.identity.application.sessions import TokenPair
 
     return TokenPair(
         access_token="test-access-token",

@@ -4,11 +4,11 @@ from jwt import PyJWTError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.analytics.provider import analytics
 from app.core.dependencies import get_db
 from app.core.utils import ok
 from app.domain.auth import AuthError
-from app.identity.infrastructure.tokens import decode_token
+from app.modules.analytics.provider import analytics
+from app.modules.identity.infrastructure.tokens import decode_token
 
 router = APIRouter(prefix="/visits")
 

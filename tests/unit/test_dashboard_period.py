@@ -1,19 +1,19 @@
 """Unit tests for dashboard period stats (today / this month in Asia/Shanghai)."""
 from datetime import datetime, timedelta
 
-from app.analytics.domain.windows import (
+from app.modules.analytics.domain.windows import (
     CST,
 )
-from app.analytics.domain.windows import (
+from app.modules.analytics.domain.windows import (
     month_range_utc as _month_range_utc,
 )
-from app.analytics.domain.windows import (
+from app.modules.analytics.domain.windows import (
     to_naive_utc as _to_naive_utc,
 )
-from app.analytics.domain.windows import (
+from app.modules.analytics.domain.windows import (
     today_range_utc as _today_range_utc,
 )
-from app.analytics.domain.windows import (
+from app.modules.analytics.domain.windows import (
     trailing_12_months as _trailing_12_months,
 )
 

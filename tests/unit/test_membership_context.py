@@ -4,15 +4,15 @@ from types import SimpleNamespace
 import pytest
 
 from app.domain.membership import MemberCode, MemberError
-from app.membership.application.administration import (
+from app.modules.membership.application.administration import (
     BlacklistUser,
     ChangeRole,
     DeleteUser,
     ForceLogout,
     UnblacklistUser,
 )
-from app.membership.application.review import ReviewApplication
-from app.membership.domain import rules
+from app.modules.membership.application.review import ReviewApplication
+from app.modules.membership.domain import rules
 
 NOW = SimpleNamespace(year=2026, month=10, day=22)
 
