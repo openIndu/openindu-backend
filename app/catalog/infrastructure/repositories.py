@@ -2,7 +2,7 @@
 from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.domain.catalog import CatalogCode, CatalogError
 from app.models.document import Document
@@ -48,6 +48,19 @@ class SqlSoftwareCatalog:
 
     def find_owned(self, software_id: int, submitter_id: int) -> Software | None:
         return self.db.query(Software).filter(Software.id == software_id, Software.submitted_by == submitter_id).first()
+
+    def list_by_submitter(self, submitter_id: int, limit: int, offset: int) -> tuple[list[Software], int]:
+        """One member's submissions, newest first, with a total for truncation hints."""
+        base = self.db.query(Software).filter(Software.submitted_by == submitter_id, Software.is_active.is_(True))
+        total = base.count()
+        rows = (
+            base.options(selectinload(Software.versions))
+            .order_by(Software.created_at.desc(), Software.id.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+        return rows, total
 
     def find_version(self, version_id: int, software_id: int) -> SoftwareVersion | None:
         return self.db.query(SoftwareVersion).filter(SoftwareVersion.id == version_id, SoftwareVersion.software_id == software_id).first()
@@ -233,6 +246,12 @@ class SqlDocumentCatalog:
 
     def find_owned(self, doc_id: int, submitter_id: int) -> Document | None:
         return self.db.query(Document).filter(Document.id == doc_id, Document.submitted_by == submitter_id).first()
+
+    def list_by_submitter(self, submitter_id: int, limit: int, offset: int) -> tuple[list[Document], int]:
+        base = self.db.query(Document).filter(Document.submitted_by == submitter_id)
+        total = base.count()
+        rows = base.order_by(Document.upload_time.desc(), Document.id.desc()).offset(offset).limit(limit).all()
+        return rows, total
 
     def matching(self, criteria, is_published: bool | None) -> list[Document]:
         q = self.db.query(Document)
