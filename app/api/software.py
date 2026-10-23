@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.catalog.application.admin import VersionCriteria
 from app.catalog.provider import catalog
+from app.core.audit import add_audit_detail
 from app.core.dependencies import get_current_user, get_db, require_admin, require_member
 from app.core.utils import iso_utc, ok
 from app.models.resource_tag import ResourceTag
@@ -263,9 +264,10 @@ class ReviewSubmissionBody(BaseModel):
 
 
 @router.patch("/{software_id}/review")
-async def review_software_submission(software_id: int, body: ReviewSubmissionBody, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+async def review_software_submission(software_id: int, body: ReviewSubmissionBody, request: Request, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """Admin review of a member submission: publish it, or reject it with a reason."""
     sw, message = catalog(db).review_submission.execute(software_id, body.action, body.reason)
+    add_audit_detail(request, action=body.action, reason=body.reason)
     if body.action == "publish":
         return ok(sw.to_dict(include_versions=True), message)
     return ok(sw.to_dict(), message)
@@ -357,7 +359,7 @@ class BulkDeleteSoftwareBody(BaseModel):
 
 
 @router.patch("/publish/bulk")
-async def bulk_publish_software(body: BulkPublishSoftwareBody, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+async def bulk_publish_software(body: BulkPublishSoftwareBody, request: Request, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     # Publish is per-version now. Callers pass version_ids (preferred) or the
     # old ids[] (= software_ids; applies to ALL versions of those softwares).
     criteria = VersionCriteria(
@@ -365,24 +367,26 @@ async def bulk_publish_software(body: BulkPublishSoftwareBody, db: Session = Dep
         brand=body.brand, category=body.category, keyword=body.keyword,
     )
     count = catalog(db).bulk_publish.execute(criteria, body.publish)
+    add_audit_detail(request, **body.model_dump(exclude_none=True), count=count)
     return ok({"count": count, "publish": body.publish}, "发布成功" if body.publish else "取消发布成功")
 
 
 @router.delete("/bulk")
-async def bulk_delete_software(body: BulkDeleteSoftwareBody, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+async def bulk_delete_software(body: BulkDeleteSoftwareBody, request: Request, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """Bulk-delete software versions (and parent software if no versions remain)."""
     criteria = VersionCriteria(
         version_ids=body.version_ids, software_ids=body.ids,
         brand=body.brand, category=body.category, keyword=body.keyword,
     )
     deleted = catalog(db).bulk_delete_versions.execute(criteria)
+    add_audit_detail(request, **body.model_dump(exclude_none=True), count=deleted)
     if deleted == 0:
         return ok({"count": 0}, "没有要删除的版本")
     return ok({"count": deleted}, f"已删除 {deleted} 个版本")
 
 
 @router.patch("/{software_id}/publish")
-async def toggle_publish(software_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+async def toggle_publish(software_id: int, request: Request, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """Legacy: toggle publish on ALL versions of a software.
 
     Kept so the older single-row toggle button keeps working — it now flips
@@ -390,12 +394,14 @@ async def toggle_publish(software_id: int, db: Session = Depends(get_db), admin:
     is, then mirrors that state onto Software.is_published for compatibility.
     """
     sw = catalog(db).toggle_publish.execute(software_id)
+    add_audit_detail(request, is_published=sw.is_published)
     return ok(sw.to_dict(), "发布状态已更新")
 
 
 @router.patch("/{software_id}/versions/{version_id}/publish")
-async def toggle_version_publish(software_id: int, version_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+async def toggle_version_publish(software_id: int, version_id: int, request: Request, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     v = catalog(db).toggle_version_publish.execute(software_id, version_id)
+    add_audit_detail(request, is_published=v.is_published)
     return ok(v.to_dict(), "发布状态已更新")
 
 

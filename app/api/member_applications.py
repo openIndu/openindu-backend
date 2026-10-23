@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.audit import self_audited
 from app.core.dependencies import get_db, require_admin, require_auth
 from app.core.utils import iso_utc, mask_phone, ok
 from app.membership.application.review import ApplicationView
@@ -102,12 +103,14 @@ async def list_applications(
 
 
 @router.put("/admin/member-applications/{user_id}/reject")
+@self_audited
 async def reject(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     view = membership(db).review.execute(user_id, admin.id, approve=False)
     return ok(_application_payload(view), "已驳回")
 
 
 @router.put("/admin/member-applications/{user_id}/approve")
+@self_audited
 async def approve(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     view = membership(db).review.execute(user_id, admin.id, approve=True)
     sms_notified = bool(view.sms_notified)

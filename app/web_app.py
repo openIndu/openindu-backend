@@ -34,6 +34,7 @@ from app.domain.auth import AuthError
 from app.domain.catalog import CatalogError
 from app.domain.knowledge import KnowledgeError
 from app.domain.membership import MemberError
+from app.middleware.admin_audit import AdminAuditMiddleware
 from app.middleware.online_stats import OnlineStatsMiddleware
 from app.middleware.token_blacklist import TokenBlacklistMiddleware
 from app.models import Base
@@ -140,6 +141,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(AdminAuditMiddleware)
 app.add_middleware(OnlineStatsMiddleware)
 app.add_middleware(TokenBlacklistMiddleware)
 

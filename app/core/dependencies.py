@@ -1,7 +1,7 @@
 """FastAPI dependency injection helpers."""
 from datetime import UTC, datetime
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWTError
 from sqlalchemy.orm import Session
@@ -66,7 +66,9 @@ async def require_member(current_user: User = Depends(require_auth)) -> User:
     return current_user
 
 
-async def require_admin(current_user: User = Depends(require_auth)) -> User:
+async def require_admin(current_user: User = Depends(require_auth), request: Request = None) -> User:
     if current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限")
+    if request is not None:  # FastAPI injects it; None only when the dependency is called directly
+        request.state.audit_admin_id = current_user.id  # lets AdminAuditMiddleware record this request
     return current_user
