@@ -5,8 +5,8 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
-from app.domain.auth import AuthError, BizCode
 from app.modules.identity.domain.account import AccountState, initial_role, require_available, require_unregistered
+from app.shared.domain.auth import AuthError, BizCode
 
 
 class Account(AccountState, Protocol):

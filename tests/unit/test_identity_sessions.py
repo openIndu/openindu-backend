@@ -5,9 +5,6 @@ from datetime import timedelta
 import jwt
 import pytest
 
-from app.core.config import settings
-from app.core.utils import utcnow
-from app.domain.auth import AuthError, BizCode
 from app.modules.identity.application.sessions import (
     ChangePhone,
     DeleteAccount,
@@ -17,6 +14,9 @@ from app.modules.identity.application.sessions import (
 )
 from app.modules.identity.domain.session_rules import require_new_phone_free
 from app.modules.identity.infrastructure.tokens import JwtTokenCodec, decode_token
+from app.shared.core.config import settings
+from app.shared.core.utils import utcnow
+from app.shared.domain.auth import AuthError, BizCode
 
 
 def make_account(**overrides):

@@ -2,10 +2,10 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_db, require_admin
-from app.core.utils import iso_utc, mask_phone, mask_phones_in_text, ok
-from app.models.admin_audit_log import AdminAuditLog
-from app.models.user import User
+from app.shared.core.dependencies import get_db, require_admin
+from app.shared.core.utils import iso_utc, mask_phone, mask_phones_in_text, ok
+from app.shared.models.admin_audit_log import AdminAuditLog
+from app.shared.models.user import User
 
 router = APIRouter(prefix="/admin")
 

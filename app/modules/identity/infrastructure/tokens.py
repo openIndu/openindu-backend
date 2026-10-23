@@ -5,11 +5,11 @@ from typing import Any
 import jwt
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
-from app.core.utils import utcnow
-from app.domain.auth import AuthError, BizCode
-from app.models.login_session import LoginSession
-from app.models.token_blacklist import TokenBlacklist
+from app.shared.core.config import settings
+from app.shared.core.utils import utcnow
+from app.shared.domain.auth import AuthError, BizCode
+from app.shared.models.login_session import LoginSession
+from app.shared.models.token_blacklist import TokenBlacklist
 
 
 class JwtTokenCodec:

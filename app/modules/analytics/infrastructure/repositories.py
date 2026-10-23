@@ -1,7 +1,7 @@
 """SQLAlchemy adapters for the analytics context."""
 from sqlalchemy.orm import Session
 
-from app.models.visit_event import VisitEvent
+from app.shared.models.visit_event import VisitEvent
 
 
 class SqlVisitEventSink:

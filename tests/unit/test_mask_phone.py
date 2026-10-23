@@ -1,5 +1,5 @@
 """Unit tests for phone masking helper."""
-from app.core.utils import mask_phone
+from app.shared.core.utils import mask_phone
 
 
 class TestMaskPhone:

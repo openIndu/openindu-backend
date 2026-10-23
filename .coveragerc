@@ -5,14 +5,13 @@ omit =
     # External service integrations that require actual external services
     app/mcp/*
     app/mcp_app.py
-    app/services/milvus_service.py
-    app/services/oss_service.py
-    app/middleware/*
+    app/shared/services/oss_service.py
+    app/shared/middleware/*
     app/web_app.py
     # FastAPI route wrappers that just delegate to the identity context
     app/api/auth.py
     # FastAPI dependencies that need running request context
-    app/core/dependencies.py
+    app/shared/core/dependencies.py
     # Portal endpoints that need more complex mocking for full coverage
     app/api/portal.py
 

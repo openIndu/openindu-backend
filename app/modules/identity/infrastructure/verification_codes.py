@@ -4,10 +4,10 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.core.utils import mask_phone
-from app.models.sms_code import SmsCode
 from app.modules.identity.application.verification_codes import SmsDeliveryError
-from app.services.sms_service import sms_service
+from app.shared.core.utils import mask_phone
+from app.shared.models.sms_code import SmsCode
+from app.shared.services.sms_service import sms_service
 
 logger = logging.getLogger(__name__)
 

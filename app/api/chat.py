@@ -16,15 +16,15 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.core.config import settings
-from app.core.dependencies import get_db, require_member
-from app.core.utils import ok, real_client_ip
-from app.models.chat_log import ChatLog
-from app.models.chat_message import ChatMessage
-from app.models.user import User
 from app.modules.knowledge.application.consultation import persist_after_stream
 from app.modules.knowledge.domain.rules import require_non_empty_question
 from app.modules.knowledge.provider import knowledge
+from app.shared.core.config import settings
+from app.shared.core.dependencies import get_db, require_member
+from app.shared.core.utils import ok, real_client_ip
+from app.shared.models.chat_log import ChatLog
+from app.shared.models.chat_message import ChatMessage
+from app.shared.models.user import User
 
 router = APIRouter()
 

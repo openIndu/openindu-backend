@@ -2,9 +2,9 @@
 import json
 from typing import Protocol
 
-from app.domain.knowledge import KnowledgeCode, KnowledgeError
 from app.modules.knowledge.application.retrieval import Retriever
 from app.modules.knowledge.domain.answering import sources_from
+from app.shared.domain.knowledge import KnowledgeCode, KnowledgeError
 
 
 class ConsultationLedger(Protocol):

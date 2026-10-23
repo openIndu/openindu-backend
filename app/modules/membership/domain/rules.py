@@ -1,7 +1,7 @@
 """Membership and account-administration rules without framework dependencies."""
 from typing import Protocol
 
-from app.domain.membership import MemberCode, MemberError
+from app.shared.domain.membership import MemberCode, MemberError
 
 APPLYABLE_ROLES = ("user",)
 REVIEWABLE_STATUS = "pending"

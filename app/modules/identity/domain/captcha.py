@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
-from app.domain.auth import AuthError, BizCode
+from app.shared.domain.auth import AuthError, BizCode
 
 SLIDER_WIDTH = 320
 SLIDER_HEIGHT = 160

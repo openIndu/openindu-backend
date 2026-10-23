@@ -1,7 +1,7 @@
 """Phone number rules without HTTP, persistence, or SMS dependencies."""
 import re
 
-from app.domain.auth import AuthError, BizCode
+from app.shared.domain.auth import AuthError, BizCode
 
 PHONE_RE = re.compile(r"^1\d{10}$")
 

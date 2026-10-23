@@ -4,17 +4,17 @@ from jwt import PyJWTError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_db
-from app.core.utils import ok
-from app.domain.auth import AuthError
 from app.modules.analytics.provider import analytics
 from app.modules.identity.infrastructure.tokens import decode_token
+from app.shared.core.dependencies import get_db
+from app.shared.core.utils import ok
+from app.shared.domain.auth import AuthError
 
 router = APIRouter(prefix="/visits")
 
 
 def client_ip(request: Request) -> str:
-    from app.core.utils import real_client_ip
+    from app.shared.core.utils import real_client_ip
     return real_client_ip(request) or "unknown"
 
 

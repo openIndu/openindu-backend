@@ -3,12 +3,12 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.audit import self_audited
-from app.core.dependencies import get_db, require_admin
-from app.core.utils import _is_private, ok
-from app.models.login_session import LoginSession
-from app.models.user import User
 from app.modules.membership.provider import membership
+from app.shared.core.audit import self_audited
+from app.shared.core.dependencies import get_db, require_admin
+from app.shared.core.utils import _is_private, ok
+from app.shared.models.login_session import LoginSession
+from app.shared.models.user import User
 
 router = APIRouter(prefix="/users")
 

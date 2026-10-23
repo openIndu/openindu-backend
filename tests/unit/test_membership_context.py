@@ -3,7 +3,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.domain.membership import MemberCode, MemberError
 from app.modules.membership.application.administration import (
     BlacklistUser,
     ChangeRole,
@@ -13,6 +12,7 @@ from app.modules.membership.application.administration import (
 )
 from app.modules.membership.application.review import ReviewApplication
 from app.modules.membership.domain import rules
+from app.shared.domain.membership import MemberCode, MemberError
 
 NOW = SimpleNamespace(year=2026, month=10, day=22)
 

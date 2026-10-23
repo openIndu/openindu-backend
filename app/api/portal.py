@@ -3,10 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_db, require_admin
-from app.core.utils import ok
-from app.models.portal_content import PortalContent
-from app.models.user import User
+from app.shared.core.dependencies import get_db, require_admin
+from app.shared.core.utils import ok
+from app.shared.models.portal_content import PortalContent
+from app.shared.models.user import User
 
 router = APIRouter(prefix="/portal")
 

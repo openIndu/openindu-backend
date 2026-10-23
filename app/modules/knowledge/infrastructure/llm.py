@@ -1,7 +1,7 @@
 """OpenAI-compatible LLM gateway (DeepSeek by default), lazily connected."""
 from typing import Any
 
-from app.core.config import settings
+from app.shared.core.config import settings
 
 _LLM_CLIENT = None
 

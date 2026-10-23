@@ -5,9 +5,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
-from app.domain.auth import AuthError, BizCode
 from app.modules.identity.domain import session_rules
 from app.modules.identity.domain.phone import require_valid_phone
+from app.shared.domain.auth import AuthError, BizCode
 
 NowFn = Callable[[], datetime]
 NewId = Callable[[], str]

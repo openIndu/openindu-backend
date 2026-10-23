@@ -14,12 +14,12 @@ from pathlib import Path
 
 import pytest
 
-from app.core.config import settings
-from app.core.utils import utcnow
-from app.domain.auth import AuthError, BizCode
-from app.domain.catalog import CatalogCode, CatalogError
 from app.modules.catalog.infrastructure.tokens import JwtUploadTokenCodec
 from app.modules.identity.infrastructure.tokens import JwtTokenCodec, decode_token
+from app.shared.core.config import settings
+from app.shared.core.utils import utcnow
+from app.shared.domain.auth import AuthError, BizCode
+from app.shared.domain.catalog import CatalogCode, CatalogError
 
 ROOT = Path(__file__).resolve().parents[2]
 HASHES = {"HS256": hashlib.sha256, "HS512": hashlib.sha512}

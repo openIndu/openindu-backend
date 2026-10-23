@@ -4,9 +4,9 @@ from unittest.mock import patch
 
 import pytest
 
-from app.core.config import settings
-from app.models.admin_audit_log import AdminAuditLog
-from app.models.user import User
+from app.shared.core.config import settings
+from app.shared.models.admin_audit_log import AdminAuditLog
+from app.shared.models.user import User
 
 
 def _make_pending_user(db, phone="13900000001", uid=910001):
@@ -32,8 +32,8 @@ def client():
     """TestClient on the real SQLite db with an admin identity injected."""
     from fastapi.testclient import TestClient
 
-    from app.core.database import SessionLocal
-    from app.core.dependencies import get_db, require_admin
+    from app.shared.core.database import SessionLocal
+    from app.shared.core.dependencies import get_db, require_admin
     from app.web_app import app
 
     db = SessionLocal()
@@ -68,7 +68,7 @@ def _approve(client, user_id):
 
 class TestApproveSendsSms:
     def test_approve_notifies_and_upgrades(self, client):
-        from app.core.database import SessionLocal
+        from app.shared.core.database import SessionLocal
 
         db = SessionLocal()
         user = _make_pending_user(db)
@@ -88,7 +88,7 @@ class TestApproveSendsSms:
 
     def test_approve_survives_sms_failure(self, client):
         """A failed SMS must not roll back the committed approval."""
-        from app.core.database import SessionLocal
+        from app.shared.core.database import SessionLocal
 
         db = SessionLocal()
         user = _make_pending_user(db)
@@ -108,7 +108,7 @@ class TestApproveSendsSms:
 
     def test_approve_reports_unconfigured_template(self, client):
         """Real mode without SMS_APPROVAL_TEMPLATE_ID: approval fine, notice skipped."""
-        from app.core.database import SessionLocal
+        from app.shared.core.database import SessionLocal
 
         db = SessionLocal()
         user = _make_pending_user(db)
@@ -120,13 +120,13 @@ class TestApproveSendsSms:
         assert response.json()["data"]["sms_notified"] is False
 
     def test_mock_mode_does_not_claim_delivery(self, client):
-        from app.core.database import SessionLocal
+        from app.shared.core.database import SessionLocal
 
         db = SessionLocal()
         user = _make_pending_user(db)
 
         with patch.object(settings, "SMS_MOCK_ENABLED", True):
-            with patch("app.services.sms_service.SmsService.send") as mock_send:
+            with patch("app.shared.services.sms_service.SmsService.send") as mock_send:
                 response = _approve(client, user.id)
 
         assert response.status_code == 200
@@ -136,13 +136,13 @@ class TestApproveSendsSms:
 
 class TestSmsService:
     def test_send_requires_template_id(self):
-        from app.services.sms_service import SmsService
+        from app.shared.services.sms_service import SmsService
 
         with pytest.raises(RuntimeError, match="模板"):
             SmsService.send("13800138000", "")
 
     def test_verification_code_uses_code_template(self):
-        from app.services.sms_service import SmsService
+        from app.shared.services.sms_service import SmsService
 
         with patch.object(SmsService, "send") as mock_send:
             SmsService.send_verification_code("13800138000", "123456")

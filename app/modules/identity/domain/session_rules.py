@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Any, Protocol
 
-from app.domain.auth import AuthError, BizCode
+from app.shared.domain.auth import AuthError, BizCode
 
 
 class RefreshableAccount(Protocol):

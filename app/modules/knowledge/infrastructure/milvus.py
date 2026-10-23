@@ -1,7 +1,7 @@
 """Milvus vector search service used by MCP tools."""
 from typing import Any
 
-from app.core.config import settings
+from app.shared.core.config import settings
 
 
 class MilvusService:

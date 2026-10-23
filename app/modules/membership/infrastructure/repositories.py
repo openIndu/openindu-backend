@@ -3,11 +3,11 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from app.core.utils import mask_phone
-from app.models.admin_audit_log import AdminAuditLog
-from app.models.login_session import LoginSession
-from app.models.user import User
-from app.services.sms_service import sms_service
+from app.shared.core.utils import mask_phone
+from app.shared.models.admin_audit_log import AdminAuditLog
+from app.shared.models.login_session import LoginSession
+from app.shared.models.user import User
+from app.shared.services.sms_service import sms_service
 
 logger = logging.getLogger(__name__)
 

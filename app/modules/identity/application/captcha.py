@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Protocol
 
-from app.domain.auth import AuthError, BizCode
 from app.modules.identity.domain import captcha as captcha_rules
+from app.shared.domain.auth import AuthError, BizCode
 
 CHALLENGE_LIFETIME_SECONDS = 120
 TICKET_LIFETIME_SECONDS = 300

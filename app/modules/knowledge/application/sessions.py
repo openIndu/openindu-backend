@@ -1,8 +1,8 @@
 """Chat session use cases: create, rename, delete, message feedback."""
 from typing import Protocol
 
-from app.domain.knowledge import KnowledgeCode, KnowledgeError
 from app.modules.knowledge.domain import rules as session_rules
+from app.shared.domain.knowledge import KnowledgeCode, KnowledgeError
 
 
 class ChatSessionEntry(Protocol):

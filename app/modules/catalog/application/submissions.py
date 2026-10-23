@@ -3,8 +3,8 @@ import math
 from collections.abc import Callable
 from typing import Protocol
 
-from app.domain.catalog import CatalogCode, CatalogError
 from app.modules.catalog.domain import rules
+from app.shared.domain.catalog import CatalogCode, CatalogError
 
 NowFn = Callable[[], object]
 

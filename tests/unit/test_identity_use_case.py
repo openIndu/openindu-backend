@@ -5,8 +5,8 @@ from datetime import datetime
 
 import pytest
 
-from app.domain.auth import AuthError, BizCode
 from app.modules.identity.application.authenticate import AuthenticateBySms, AuthenticationIntent
+from app.shared.domain.auth import AuthError, BizCode
 
 
 @dataclass

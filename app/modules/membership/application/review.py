@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
-from app.domain.membership import MemberCode, MemberError
 from app.modules.membership.domain import rules
+from app.shared.domain.membership import MemberCode, MemberError
 
 NowFn = Callable[[], datetime]
 MaskFn = Callable[[object], object]

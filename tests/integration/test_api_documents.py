@@ -44,7 +44,7 @@ def _make_client(app, auth_user=None):
     """
     from fastapi.testclient import TestClient
 
-    from app.core.dependencies import get_db, require_admin, require_auth, require_member
+    from app.shared.core.dependencies import get_db, require_admin, require_auth, require_member
 
     # Clear previous overrides for test isolation
     app.dependency_overrides.clear()
@@ -119,7 +119,7 @@ class TestDocumentUpload:
 
     def test_upload_success(self):
         """Uploading a valid PDF should succeed."""
-        from app.services.storage_service import storage_service
+        from app.shared.services.storage_service import storage_service
 
         admin = _make_user(role="admin")
         client = _make_client(self.app, auth_user=admin)
@@ -333,7 +333,7 @@ class TestDocumentPreviewLimit:
 
     def test_preview_separate_quota_and_no_download_count_bump(self):
         """Under the preview quota: 200, logs document_preview, leaves download_count untouched."""
-        from app.services.storage_service import storage_service
+        from app.shared.services.storage_service import storage_service
 
         member = _make_user(role="member")
         client = _make_client(self.app, auth_user=member)
@@ -355,7 +355,7 @@ class TestDocumentPreviewLimit:
 
     def test_preview_429_when_preview_quota_exhausted(self):
         """At/over the preview quota: 429, and nothing is logged."""
-        from app.core.config import settings
+        from app.shared.core.config import settings
 
         member = _make_user(role="member")
         client = _make_client(self.app, auth_user=member)
@@ -369,7 +369,7 @@ class TestDocumentPreviewLimit:
 
     def test_preview_admin_bypasses_quota(self):
         """Admins bypass the preview quota even when far over it."""
-        from app.services.storage_service import storage_service
+        from app.shared.services.storage_service import storage_service
 
         admin = _make_user(role="admin")
         client = _make_client(self.app, auth_user=admin)
@@ -402,7 +402,7 @@ class TestDocumentDownloadLimit:
         self.app = app
 
     def test_download_uses_document_quota_and_bumps_count(self):
-        from app.services.storage_service import storage_service
+        from app.shared.services.storage_service import storage_service
 
         member = _make_user(role="member")
         client = _make_client(self.app, auth_user=member)
@@ -419,7 +419,7 @@ class TestDocumentDownloadLimit:
         assert added.resource_type == "document"
 
     def test_download_429_when_download_quota_exhausted(self):
-        from app.core.config import settings
+        from app.shared.core.config import settings
 
         member = _make_user(role="member")
         client = _make_client(self.app, auth_user=member)
