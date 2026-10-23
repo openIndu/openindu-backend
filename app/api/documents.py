@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.catalog.application.documents import DocumentCriteria
 from app.catalog.provider import catalog
+from app.core.audit import add_audit_detail
 from app.core.dependencies import get_current_user, get_db, require_admin, require_member
 from app.core.utils import iso_utc, ok
 from app.models.document import Document
@@ -133,9 +134,10 @@ class ReviewSubmissionBody(BaseModel):
 
 
 @router.patch("/{doc_id}/review")
-async def review_document_submission(doc_id: int, body: ReviewSubmissionBody, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+async def review_document_submission(doc_id: int, body: ReviewSubmissionBody, request: Request, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """Admin review of a member submission: publish it, or reject it with a reason."""
     doc, message = catalog(db).review_document.execute(doc_id, body.action, body.reason)
+    add_audit_detail(request, action=body.action, reason=body.reason)
     return ok(doc.to_dict(), message)
 
 
@@ -182,9 +184,10 @@ class BulkPublishDocumentsBody(BaseModel):
 
 
 @router.patch("/publish/bulk")
-async def bulk_publish_documents(body: BulkPublishDocumentsBody, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+async def bulk_publish_documents(body: BulkPublishDocumentsBody, request: Request, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     criteria = DocumentCriteria(ids=body.ids, brand=body.brand, category=body.category, series=body.series, keyword=body.keyword)
     count = catalog(db).bulk_publish_documents.execute(criteria, body.publish)
+    add_audit_detail(request, **body.model_dump(exclude_none=True), count=count)
     return ok({"count": count, "publish": body.publish}, "发布成功" if body.publish else "取消发布成功")
 
 
@@ -202,8 +205,9 @@ async def update_document(doc_id: int, body: UpdateDocumentBody, db: Session = D
 
 
 @router.patch("/{doc_id}/publish")
-async def toggle_publish(doc_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+async def toggle_publish(doc_id: int, request: Request, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     doc = catalog(db).toggle_document_publish.execute(doc_id)
+    add_audit_detail(request, is_published=doc.is_published)
     return ok(doc.to_dict(), "发布状态已更新")
 
 

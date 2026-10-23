@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.audit import self_audited
 from app.core.dependencies import get_db, require_admin
 from app.core.utils import _is_private, ok
 from app.membership.provider import membership
@@ -99,30 +100,35 @@ async def list_users(
 
 
 @router.put("/{user_id}/role")
+@self_audited
 async def change_role(user_id: int, body: RoleChange, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     user = membership(db).change_role.execute(user_id, admin.id, body.role)
     return ok(user.to_dict())
 
 
 @router.post("/{user_id}/blacklist")
+@self_audited
 async def blacklist(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     user = membership(db).blacklist.execute(user_id, admin.id)
     return ok(user.to_dict(), "已拉黑")
 
 
 @router.post("/{user_id}/unblacklist")
+@self_audited
 async def unblacklist(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     user = membership(db).unblacklist.execute(user_id, admin.id)
     return ok(user.to_dict(), "已解除拉黑")
 
 
 @router.post("/{user_id}/force-logout")
+@self_audited
 async def force_logout(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     user = membership(db).force_logout.execute(user_id, admin.id)
     return ok(user.to_dict(), "已强制登出")
 
 
 @router.delete("/{user_id}")
+@self_audited
 async def delete_user(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """Soft-delete a user: set ``deleted_at`` + invalidate sessions/tokens.
 
