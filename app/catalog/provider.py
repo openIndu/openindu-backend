@@ -17,6 +17,7 @@ from app.catalog.application.documents import (
     BulkSetDocumentPublishing,
     DeleteDocument,
     IssueDocumentLink,
+    ListDocumentSubmissions,
     ReviewDocumentSubmission,
     SubmitDocument,
     ToggleDocumentPublishing,
@@ -27,6 +28,7 @@ from app.catalog.application.downloads import IssueSoftwareDownloadLink
 from app.catalog.application.submissions import (
     AbortDirectUpload,
     CompleteDirectUpload,
+    ListSoftwareSubmissions,
     PlanDirectUpload,
     ReviewSoftwareSubmission,
     SubmitSoftwarePackage,
@@ -80,6 +82,8 @@ class CatalogContext:
     create_tag: CreateTag
     update_tag: UpdateTag
     delete_tag: DeleteTag
+    list_software_submissions: ListSoftwareSubmissions
+    list_document_submissions: ListDocumentSubmissions
 
 
 def catalog(db: Session) -> CatalogContext:
@@ -126,4 +130,6 @@ def catalog(db: Session) -> CatalogContext:
         create_tag=CreateTag(board),
         update_tag=UpdateTag(board),
         delete_tag=DeleteTag(board),
+        list_software_submissions=ListSoftwareSubmissions(sw),
+        list_document_submissions=ListDocumentSubmissions(docs),
     )

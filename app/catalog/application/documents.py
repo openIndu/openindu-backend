@@ -40,6 +40,8 @@ class DocumentCatalog(Protocol):
 
     def find_owned(self, doc_id: int, submitter_id: int) -> DocumentEntry | None: ...
 
+    def list_by_submitter(self, submitter_id: int, limit: int, offset: int) -> tuple[list[DocumentEntry], int]: ...
+
     def matching(self, criteria: "DocumentCriteria", is_published: bool | None) -> list: ...
 
     def add(self, *, meta: dict, original_name: str, brand: str, category: str, series: str | None, description: str | None, submitted_by: int | None, submission_status: str) -> DocumentEntry: ...
@@ -260,3 +262,13 @@ class DeleteDocument:
             raise CatalogError(CatalogCode.DOC_NOT_FOUND)
         self.storage.delete(doc.oss_key)
         self.docs.delete(doc)
+
+
+class ListDocumentSubmissions:
+    """Read-only listing of a member's own document submissions, page-shaped."""
+
+    def __init__(self, docs: DocumentCatalog) -> None:
+        self.docs = docs
+
+    def execute(self, submitter_id: int, limit: int, offset: int) -> tuple[list[DocumentEntry], int]:
+        return self.docs.list_by_submitter(submitter_id, limit, offset)

@@ -220,8 +220,13 @@ async def upload_abort(body: UploadAbortBody, db: Session = Depends(get_db), use
 
 
 @router.get("/my-submissions")
-async def my_software_submissions(db: Session = Depends(get_db), user: User = Depends(require_member)):
-    rows = db.query(Software).filter(Software.submitted_by == user.id, Software.is_active.is_(True)).order_by(Software.created_at.desc()).all()
+async def my_software_submissions(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_member),
+):
+    rows, total = catalog(db).list_software_submissions.execute(user.id, limit, offset)
     items = []
     for s in rows:
         size = None
@@ -243,7 +248,7 @@ async def my_software_submissions(db: Session = Depends(get_db), user: User = De
             "is_published": s.is_published,
             "created_at": iso_utc(s.created_at),
         })
-    return ok({"items": items})
+    return ok({"items": items, "total": total, "truncated": offset + len(items) < total})
 
 
 @router.delete("/my-submissions/{software_id}")

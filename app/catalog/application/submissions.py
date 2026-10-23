@@ -62,6 +62,8 @@ class SoftwareCatalog(Protocol):
 
     def find_owned(self, software_id: int, submitter_id: int) -> SoftwareEntry | None: ...
 
+    def list_by_submitter(self, submitter_id: int, limit: int, offset: int) -> tuple[list[SoftwareEntry], int]: ...
+
     def find_version_by_oss_key(self, oss_key: str) -> bool: ...
 
     def add_submission(
@@ -362,3 +364,13 @@ class WithdrawSoftwareSubmission:
         for ver in entry.versions:
             self.storage.delete(ver.oss_key)
         self.catalog.delete(entry)
+
+
+class ListSoftwareSubmissions:
+    """Read-only listing of a member's own submissions, page-shaped."""
+
+    def __init__(self, catalog: SoftwareCatalog) -> None:
+        self.catalog = catalog
+
+    def execute(self, submitter_id: int, limit: int, offset: int) -> tuple[list[SoftwareEntry], int]:
+        return self.catalog.list_by_submitter(submitter_id, limit, offset)

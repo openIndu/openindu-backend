@@ -255,6 +255,18 @@ class TestSoftwareSubmissions:
         })
         assert resp.status_code == 403
 
+    def test_my_submissions_pagination(self, member):
+        client = _client_as(member)
+        ids = [_upload_software(client, version=f"1.{i}").json()["data"]["id"] for i in range(3)]
+        data = client.get("/api/v1/software/my-submissions", params={"limit": 2}).json()["data"]
+        assert [i["id"] for i in data["items"]] == [ids[2], ids[1]]  # newest first
+        assert data["total"] >= 3
+        assert data["truncated"] is True
+        page2 = client.get("/api/v1/software/my-submissions", params={"limit": 2, "offset": 1}).json()["data"]
+        assert [i["id"] for i in page2["items"]] == [ids[1], ids[0]]
+        assert client.get("/api/v1/software/my-submissions", params={"limit": 501}).status_code == 422
+        assert client.get("/api/v1/software/my-submissions", params={"offset": -1}).status_code == 422
+
 
 _doc_seq = 0
 
@@ -337,3 +349,12 @@ class TestDocumentSubmissions:
         assert del_file.called
         items = client.get("/api/v1/documents/my-submissions").json()["data"]["items"]
         assert all(i["id"] != doc_id for i in items)
+
+    def test_my_submissions_pagination(self, member):
+        client = _client_as(member)
+        ids = [_upload_document(client).json()["data"]["id"] for _ in range(3)]
+        data = client.get("/api/v1/documents/my-submissions", params={"limit": 2}).json()["data"]
+        assert [i["id"] for i in data["items"]] == [ids[2], ids[1]]  # newest first
+        assert data["total"] >= 3
+        assert data["truncated"] is True
+        assert client.get("/api/v1/documents/my-submissions", params={"limit": 501}).status_code == 422

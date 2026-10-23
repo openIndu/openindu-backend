@@ -98,8 +98,13 @@ async def categories(db: Session = Depends(get_db)):
 
 
 @router.get("/my-submissions")
-async def my_document_submissions(db: Session = Depends(get_db), user: User = Depends(require_member)):
-    rows = db.query(Document).filter(Document.submitted_by == user.id).order_by(Document.upload_time.desc()).all()
+async def my_document_submissions(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_member),
+):
+    rows, total = catalog(db).list_document_submissions.execute(user.id, limit, offset)
     items = [{
         "id": d.id,
         "original_name": d.original_name,
@@ -113,7 +118,7 @@ async def my_document_submissions(db: Session = Depends(get_db), user: User = De
         "is_published": d.is_published,
         "upload_time": iso_utc(d.upload_time),
     } for d in rows]
-    return ok({"items": items})
+    return ok({"items": items, "total": total, "truncated": offset + len(items) < total})
 
 
 @router.delete("/my-submissions/{doc_id}")
