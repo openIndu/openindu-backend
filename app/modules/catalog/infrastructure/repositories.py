@@ -9,6 +9,16 @@ from app.shared.models.document import Document
 from app.shared.models.download_log import DownloadLog
 from app.shared.models.resource_tag import ResourceTag
 from app.shared.models.software import Software, SoftwareVersion
+from app.shared.models.submission_event import SubmissionEvent
+
+
+def _submission_event(actor_id: int | None, resource_type: str, resource_id: int, name: str, action: str, version: str | None = None) -> SubmissionEvent | None:
+    if actor_id is None:
+        return None
+    return SubmissionEvent(
+        actor_id=actor_id, resource_type=resource_type, resource_id=resource_id,
+        resource_name=name, action=action, version=version,
+    )
 
 
 def _duplicate_oss_key(exc: IntegrityError) -> bool:
@@ -109,6 +119,9 @@ class SqlSoftwareCatalog:
                 software_id=sw.id, version=version, original_name=original_name,
                 file_size=meta["file_size"], file_hash=meta["file_hash"], oss_key=meta["oss_key"],
             ))
+            event = _submission_event(submitted_by, "software", sw.id, original_name, "submitted", version)
+            if event is not None:
+                self.db.add(event)
             self.db.commit()
             self.db.refresh(sw)
         except IntegrityError as exc:
@@ -131,6 +144,9 @@ class SqlSoftwareCatalog:
                 software_id=sw.id, version=version, original_name=original_name,
                 file_size=file_size, file_hash=file_hash, oss_key=oss_key,
             ))
+            event = _submission_event(submitted_by, "software", sw.id, original_name, "submitted", version)
+            if event is not None:
+                self.db.add(event)
             self.db.commit()
             self.db.refresh(sw)
         except IntegrityError as exc:
@@ -143,7 +159,7 @@ class SqlSoftwareCatalog:
             raise
         return sw
 
-    def add_version_to_existing(self, software_id: int, *, oss_key: str, original_name: str, version: str, file_size: int, file_hash: str | None) -> Software:
+    def add_version_to_existing(self, software_id: int, *, oss_key: str, original_name: str, version: str, file_size: int, file_hash: str | None, actor_id: int | None = None) -> Software:
         sw = self.find(software_id)
         try:
             self.db.add(SoftwareVersion(
@@ -151,6 +167,9 @@ class SqlSoftwareCatalog:
                 file_size=file_size, file_hash=file_hash, oss_key=oss_key,
             ))
             sw.latest_version = version
+            event = _submission_event(actor_id, "software", sw.id, original_name, "version_added", version)
+            if event is not None:
+                self.db.add(event)
             self.db.commit()
             self.db.refresh(sw)
         except IntegrityError as exc:
@@ -163,15 +182,22 @@ class SqlSoftwareCatalog:
             raise
         return sw
 
-    def add_version(self, software: Software, *, meta: dict, original_name: str, version: str) -> SoftwareVersion:
+    def add_version(self, software: Software, *, meta: dict, original_name: str, version: str, actor_id: int | None = None) -> SoftwareVersion:
         ver = SoftwareVersion(
             software_id=software.id, version=version, original_name=original_name,
             file_size=meta["file_size"], file_hash=meta["file_hash"], oss_key=meta["oss_key"],
         )
         software.latest_version = version
         self.db.add(ver)
-        self.db.commit()
-        self.db.refresh(ver)
+        event = _submission_event(actor_id, "software", software.id, original_name, "version_added", version)
+        if event is not None:
+            self.db.add(event)
+        try:
+            self.db.commit()
+            self.db.refresh(ver)
+        except Exception:
+            self.db.rollback()
+            raise
         return ver
 
     def save(self, entry: Software) -> Software:
@@ -186,9 +212,16 @@ class SqlSoftwareCatalog:
     def save_versions(self, versions: list[SoftwareVersion]) -> None:
         self.db.commit()
 
-    def delete(self, entry: Software) -> None:
-        self.db.delete(entry)
-        self.db.commit()
+    def delete(self, entry: Software, *, actor_id: int | None = None) -> None:
+        try:
+            event = _submission_event(actor_id, "software", entry.id, entry.original_name, "withdrawn", entry.latest_version)
+            if event is not None:
+                self.db.add(event)
+            self.db.delete(entry)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
 
     def delete_version(self, version: SoftwareVersion) -> None:
         self.db.delete(version)
@@ -279,6 +312,10 @@ class SqlDocumentCatalog:
         )
         try:
             self.db.add(doc)
+            self.db.flush()
+            event = _submission_event(submitted_by, "document", doc.id, original_name, "submitted")
+            if event is not None:
+                self.db.add(event)
             self.db.commit()
             self.db.refresh(doc)
         except Exception:
@@ -294,9 +331,16 @@ class SqlDocumentCatalog:
     def save_many(self, entries: list[Document]) -> None:
         self.db.commit()
 
-    def delete(self, entry: Document) -> None:
-        self.db.delete(entry)
-        self.db.commit()
+    def delete(self, entry: Document, *, actor_id: int | None = None) -> None:
+        try:
+            event = _submission_event(actor_id, "document", entry.id, entry.original_name, "withdrawn")
+            if event is not None:
+                self.db.add(event)
+            self.db.delete(entry)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
 
 
 class SqlTagBoard:

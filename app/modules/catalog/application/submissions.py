@@ -95,12 +95,12 @@ class SoftwareCatalog(Protocol):
     ) -> SoftwareEntry: ...
 
     def add_version_to_existing(
-        self, software_id: int, *, oss_key: str, original_name: str, version: str, file_size: int, file_hash: str | None
+        self, software_id: int, *, oss_key: str, original_name: str, version: str, file_size: int, file_hash: str | None, actor_id: int | None = None
     ) -> SoftwareEntry: ...
 
     def save(self, entry: SoftwareEntry) -> SoftwareEntry: ...
 
-    def delete(self, entry: SoftwareEntry) -> None: ...
+    def delete(self, entry: SoftwareEntry, *, actor_id: int | None = None) -> None: ...
 
 
 class SubmitSoftwarePackage:
@@ -276,6 +276,7 @@ class CompleteDirectUpload:
                 version=claims["version"],
                 file_size=claims["size"],
                 file_hash=file_hash,
+                actor_id=claims.get("submitted_by"),
             )
         except Exception:
             self.storage.delete(oss_key)
@@ -363,7 +364,7 @@ class WithdrawSoftwareSubmission:
             raise CatalogError(CatalogCode.SUBMISSION_NOT_FOUND)
         for ver in entry.versions:
             self.storage.delete(ver.oss_key)
-        self.catalog.delete(entry)
+        self.catalog.delete(entry, actor_id=submitter_id)
 
 
 class ListSoftwareSubmissions:

@@ -50,7 +50,7 @@ class DocumentCatalog(Protocol):
 
     def save_many(self, entries: list) -> None: ...
 
-    def delete(self, entry: DocumentEntry) -> None: ...
+    def delete(self, entry: DocumentEntry, *, actor_id: int | None = None) -> None: ...
 
 
 class DownloadLedger(Protocol):
@@ -153,7 +153,7 @@ class WithdrawDocumentSubmission:
         if not doc:
             raise CatalogError(CatalogCode.SUBMISSION_NOT_FOUND)
         self.storage.delete(doc.oss_key)
-        self.docs.delete(doc)
+        self.docs.delete(doc, actor_id=submitter_id)
 
 
 class IssueDocumentLink:

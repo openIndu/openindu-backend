@@ -5,9 +5,50 @@ from sqlalchemy.orm import Session
 from app.shared.core.dependencies import get_db, require_admin
 from app.shared.core.utils import iso_utc, mask_phone, mask_phones_in_text, ok
 from app.shared.models.admin_audit_log import AdminAuditLog
+from app.shared.models.submission_event import SubmissionEvent
 from app.shared.models.user import User
 
 router = APIRouter(prefix="/admin")
+
+
+@router.get("/submission-events")
+async def submission_events(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(15, ge=1, le=100),
+    actor_keyword: str | None = Query(None),
+    resource_type: str | None = Query(None, pattern="^(software|document)$"),
+    resource_id: int | None = Query(None, ge=1),
+    action: str | None = Query(None, pattern="^(submitted|withdrawn|version_added)$"),
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
+    """List successful submission events, including rows for withdrawn resources."""
+    q = db.query(SubmissionEvent, User.phone.label("actor_phone")).outerjoin(User, SubmissionEvent.actor_id == User.id)
+    if actor_keyword:
+        q = q.filter(User.phone.ilike(f"%{actor_keyword}%"))
+    if resource_type:
+        q = q.filter(SubmissionEvent.resource_type == resource_type)
+    if resource_id is not None:
+        q = q.filter(SubmissionEvent.resource_id == resource_id)
+    if action:
+        q = q.filter(SubmissionEvent.action == action)
+    total = q.count()
+    rows = q.order_by(SubmissionEvent.created_at.desc(), SubmissionEvent.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return ok({
+        "items": [{
+            "id": event.id,
+            "actor": mask_phone(phone) or f"ID:{event.actor_id}",
+            "resource_type": event.resource_type,
+            "resource_id": event.resource_id,
+            "resource_name": event.resource_name,
+            "action": event.action,
+            "version": event.version,
+            "created_at": iso_utc(event.created_at),
+        } for event, phone in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    })
 
 
 @router.get("/audit-logs")

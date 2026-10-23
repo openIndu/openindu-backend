@@ -28,7 +28,7 @@ class SoftwareCatalog(Protocol):
 
     def versions_matching(self, criteria: "VersionCriteria", is_published: bool | None) -> list: ...
 
-    def add_version(self, software: SoftwareEntry, *, meta: dict, original_name: str, version: str) -> object: ...
+    def add_version(self, software: SoftwareEntry, *, meta: dict, original_name: str, version: str, actor_id: int | None = None) -> object: ...
 
     def save_version(self, version) -> None: ...
 
@@ -72,14 +72,14 @@ class AddSoftwareVersion:
         self.storage = storage
         self._prefix = software_prefix
 
-    def execute(self, software_id: int, file_stream, filename: str | None, content_type: str | None, version: str) -> object:
+    def execute(self, software_id: int, file_stream, filename: str | None, content_type: str | None, version: str, actor_id: int | None = None) -> object:
         software = self.catalog.find(software_id)
         if not software:
             raise CatalogError(CatalogCode.SW_NOT_FOUND)
         if rules.file_ext(filename) not in rules.ALLOWED_SOFTWARE_EXTS:
             raise CatalogError(CatalogCode.UNSUPPORTED_PACKAGE_FORMAT)
         meta = self.storage.upload(file_stream, filename, f"{self._prefix}/{software.brand}", content_type)
-        return self.catalog.add_version(software, meta=meta, original_name=filename or "", version=version)
+        return self.catalog.add_version(software, meta=meta, original_name=filename or "", version=version, actor_id=actor_id)
 
 
 class DeleteSoftwareVersion:

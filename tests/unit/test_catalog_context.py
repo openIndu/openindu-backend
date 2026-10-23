@@ -107,7 +107,7 @@ class FakeCatalog:
     def save_versions(self, versions):
         self.saved.extend(versions)
 
-    def delete(self, entry):
+    def delete(self, entry, *, actor_id=None):
         self.deleted.append(entry.id)
         self.entries.pop(entry.id, None)
 
