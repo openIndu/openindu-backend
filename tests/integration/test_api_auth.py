@@ -265,7 +265,7 @@ class TestRegisterAndLogin:
         # Generate a valid JWT token for the middleware to decode
         import time
 
-        from jose import jwt
+        import jwt
 
         from app.core.config import settings
         payload = {

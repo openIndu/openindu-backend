@@ -1,8 +1,9 @@
 """Middleware that rejects revoked JWTs."""
 from datetime import UTC, datetime
 
+import jwt
 from fastapi import Request
-from jose import JWTError, jwt
+from jwt import PyJWTError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
@@ -20,7 +21,10 @@ class TokenBlacklistMiddleware(BaseHTTPMiddleware):
         if auth.lower().startswith("bearer "):
             token = auth.split(" ", 1)[1]
             try:
-                payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+                # A future iat is tolerated, same as JwtTokenCodec.decode (python-jose parity).
+                payload = jwt.decode(
+                    token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM], options={"verify_iat": False}
+                )
                 jti = payload.get("jti")
                 db = SessionLocal()
                 try:
@@ -42,6 +46,6 @@ class TokenBlacklistMiddleware(BaseHTTPMiddleware):
                                     return JSONResponse(status_code=401, content=ErrorCode.error_body(BizCode.AUTH_FORCED_LOGOUT))
                 finally:
                     db.close()
-            except JWTError:
+            except PyJWTError:
                 pass
         return await call_next(request)

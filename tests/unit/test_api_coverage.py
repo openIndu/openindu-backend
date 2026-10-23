@@ -798,10 +798,10 @@ def test_identity_issue_token_pair():
 
     from app.core.utils import utcnow
     from app.identity.application.sessions import IssueTokenPair
-    from app.identity.infrastructure.tokens import JoseTokenCodec
+    from app.identity.infrastructure.tokens import JwtTokenCodec
 
     account = SimpleNamespace(id=1, phone="13800138000", role="user")
-    tokens = asdict(IssueTokenPair(JoseTokenCodec(), None, utcnow, 60, 7).execute(account))
+    tokens = asdict(IssueTokenPair(JwtTokenCodec(), None, utcnow, 60, 7).execute(account))
     assert "access_token" in tokens
     assert "refresh_token" in tokens
 
@@ -887,7 +887,7 @@ def test_identity_sign_in_rejects_bad_code():
 def test_identity_logout():
     from app.core.utils import utcnow
     from app.identity.application.sessions import EndSession, IssueTokenPair
-    from app.identity.infrastructure.tokens import JoseTokenCodec
+    from app.identity.infrastructure.tokens import JwtTokenCodec
 
     class Blacklist:
         added = False
@@ -906,18 +906,18 @@ def test_identity_logout():
             pass
 
     account = SimpleNamespace(id=7, phone="13800138000", role="user")
-    token = IssueTokenPair(JoseTokenCodec(), None, utcnow, 60, 7).execute(account).access_token
-    EndSession(JoseTokenCodec(), Blacklist(), Sessions(), utcnow).execute(token, user_agent="UA", client_id="client-1")
+    token = IssueTokenPair(JwtTokenCodec(), None, utcnow, 60, 7).execute(account).access_token
+    EndSession(JwtTokenCodec(), Blacklist(), Sessions(), utcnow).execute(token, user_agent="UA", client_id="client-1")
     assert Blacklist.added
 
 
 def test_identity_decode_token_roundtrip():
     from app.core.utils import utcnow
     from app.identity.application.sessions import IssueTokenPair
-    from app.identity.infrastructure.tokens import JoseTokenCodec, decode_token
+    from app.identity.infrastructure.tokens import JwtTokenCodec, decode_token
 
     account = SimpleNamespace(id=7, phone="13800138000", role="user")
-    token = IssueTokenPair(JoseTokenCodec(), None, utcnow, 60, 7).execute(account).access_token
+    token = IssueTokenPair(JwtTokenCodec(), None, utcnow, 60, 7).execute(account).access_token
     assert decode_token(token)["type"] == "access"
 
 
@@ -931,7 +931,7 @@ def test_models():
 
 
 def _direct_upload_token(claims_extra: dict) -> str:
-    from jose import jwt
+    import jwt
 
     from app.core.config import settings
     claims = {"oss_key": "software/siemens/abc.zip", "filename": "t.zip", "brand": "siemens",
@@ -977,7 +977,7 @@ def test_software_direct_upload_init_multipart(monkeypatch):
     assert data["mode"] == "multipart"
     assert len(data["part_urls"]) == 2
     assert data["part_urls"][1] == "https://oss/part2"
-    from jose import jwt
+    import jwt
 
     from app.core.config import settings
     claims = jwt.decode(data["token"], settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])

@@ -2,8 +2,8 @@
 from dataclasses import asdict
 from datetime import timedelta
 
+import jwt
 import pytest
-from jose import jwt
 
 from app.core.config import settings
 from app.core.utils import utcnow
@@ -16,7 +16,7 @@ from app.identity.application.sessions import (
     RefreshSession,
 )
 from app.identity.domain.session_rules import require_new_phone_free
-from app.identity.infrastructure.tokens import JoseTokenCodec, decode_token
+from app.identity.infrastructure.tokens import JwtTokenCodec, decode_token
 
 
 def make_account(**overrides):
@@ -77,7 +77,7 @@ class FakeSessions:
 
 
 def make_issuer():
-    return IssueTokenPair(JoseTokenCodec(), None, utcnow, settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+    return IssueTokenPair(JwtTokenCodec(), None, utcnow, settings.ACCESS_TOKEN_EXPIRE_MINUTES,
                           settings.REFRESH_TOKEN_EXPIRE_DAYS)
 
 
@@ -107,7 +107,7 @@ class TestIssueTokenPair:
 
 class TestRefreshSession:
     def make_refresh(self, account, blacklist):
-        return RefreshSession(JoseTokenCodec(), blacklist, FakeAccounts(by_id={account.id: account}),
+        return RefreshSession(JwtTokenCodec(), blacklist, FakeAccounts(by_id={account.id: account}),
                               make_issuer(), utcnow)
 
     def test_valid_refresh_rotates_and_revokes(self):
@@ -153,7 +153,7 @@ class TestEndSession:
         blacklist = FakeBlacklist()
         sessions = FakeSessions()
 
-        EndSession(JoseTokenCodec(), blacklist, sessions, utcnow).execute(
+        EndSession(JwtTokenCodec(), blacklist, sessions, utcnow).execute(
             pair.access_token, user_agent="UA", client_id="client-1"
         )
         assert blacklist.added and blacklist.added[0][3] == "logout"
@@ -164,7 +164,7 @@ class TestEndSession:
         pair = make_issuer().execute(account)
         sessions = FakeSessions()
 
-        EndSession(JoseTokenCodec(), FakeBlacklist(), sessions, utcnow).execute(pair.access_token, user_agent="UA")
+        EndSession(JwtTokenCodec(), FakeBlacklist(), sessions, utcnow).execute(pair.access_token, user_agent="UA")
         assert sessions.deactivated == [(1, None, "UA")]
 
 
@@ -172,7 +172,7 @@ class TestDeleteAccount:
     def test_account_is_disabled_and_sessions_cleared(self):
         account = make_account()
         sessions = FakeSessions()
-        result = DeleteAccount(JoseTokenCodec(), FakeBlacklist(), sessions, FakeAccounts(), utcnow).execute(
+        result = DeleteAccount(JwtTokenCodec(), FakeBlacklist(), sessions, FakeAccounts(), utcnow).execute(
             account, make_issuer().execute(account).access_token
         )
         assert result.is_active is False

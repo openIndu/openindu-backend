@@ -26,7 +26,7 @@ from app.identity.application.sessions import (
 from app.identity.application.verification_codes import SendVerificationCode, VerifySmsCode
 from app.identity.infrastructure.accounts import SqlAccountRepository
 from app.identity.infrastructure.slider_challenges import PilChallengeRenderer, SqlSliderChallengeRepository
-from app.identity.infrastructure.tokens import JoseTokenCodec, SqlLoginSessionStore, SqlTokenBlacklist
+from app.identity.infrastructure.tokens import JwtTokenCodec, SqlLoginSessionStore, SqlTokenBlacklist
 from app.identity.infrastructure.verification_codes import ProviderSmsGateway, SqlCodeStore
 
 
@@ -49,7 +49,7 @@ def identity(db: Session) -> IdentityContext:
     accounts = SqlAccountRepository(db)
     challenges = SqlSliderChallengeRepository(db)
     codes = SqlCodeStore(db)
-    codec = JoseTokenCodec()
+    codec = JwtTokenCodec()
     blacklist = SqlTokenBlacklist(db)
     sessions = SqlLoginSessionStore(db)
     rng = random.Random()

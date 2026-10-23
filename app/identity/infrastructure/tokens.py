@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Any
 
-from jose import jwt
+import jwt
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -12,7 +12,7 @@ from app.models.login_session import LoginSession
 from app.models.token_blacklist import TokenBlacklist
 
 
-class JoseTokenCodec:
+class JwtTokenCodec:
     """Encoding/decoding against the configured secret; invalid tokens raise
     the transport-independent AUTH_TOKEN_INVALID outcome."""
 
@@ -21,14 +21,18 @@ class JoseTokenCodec:
 
     def decode(self, token: str) -> dict[str, Any]:
         try:
-            return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+            # PyJWT rejects an iat in the future, python-jose never did. Replicas whose clocks differ
+            # slightly would 401 a freshly issued token, so keep the old behavior; exp/nbf stay strict.
+            return jwt.decode(
+                token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM], options={"verify_iat": False}
+            )
         except Exception:  # Catch all JWT-related errors (invalid, expired, malformed)
             raise AuthError(BizCode.AUTH_TOKEN_INVALID) from None
 
 
 def decode_token(token: str) -> dict:
     """Module-level convenience for middleware/dependencies that only decode."""
-    return JoseTokenCodec().decode(token)
+    return JwtTokenCodec().decode(token)
 
 
 class SqlTokenBlacklist:
