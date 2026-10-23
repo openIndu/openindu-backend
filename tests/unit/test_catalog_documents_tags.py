@@ -97,7 +97,7 @@ class FakeDocs:
     def save_many(self, entries):
         self.saved_many = list(entries)
 
-    def delete(self, entry):
+    def delete(self, entry, *, actor_id=None):
         self.deleted.append(entry.id)
 
 

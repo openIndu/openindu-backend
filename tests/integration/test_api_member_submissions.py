@@ -14,6 +14,7 @@ from app.shared.core.database import SessionLocal, engine
 from app.shared.core.dependencies import get_current_user, require_admin, require_auth, require_member
 from app.shared.models import Base
 from app.shared.models.resource_tag import ResourceTag
+from app.shared.models.submission_event import SubmissionEvent
 from app.shared.models.user import User
 
 # conftest's create_all predates the resource_tags table (every other test
@@ -358,3 +359,78 @@ class TestDocumentSubmissions:
         assert data["total"] >= 3
         assert data["truncated"] is True
         assert client.get("/api/v1/documents/my-submissions", params={"limit": 501}).status_code == 422
+
+
+def test_submission_events_survive_software_and_document_withdrawal(member, admin):
+    with SessionLocal() as db:
+        last_event_id = db.query(SubmissionEvent.id).order_by(SubmissionEvent.id.desc()).first()
+    last_event_id = last_event_id[0] if last_event_id else 0
+    member_client = _client_as(member)
+    sw_id = _upload_software(member_client).json()["data"]["id"]
+    doc_id = _upload_document(member_client).json()["data"]["id"]
+
+    with patch("app.modules.catalog.infrastructure.storage.storage_service.delete_file"):
+        assert member_client.delete(f"/api/v1/software/my-submissions/{sw_id}").status_code == 200
+        assert member_client.delete(f"/api/v1/documents/my-submissions/{doc_id}").status_code == 200
+
+    with SessionLocal() as db:
+        events = db.query(SubmissionEvent).filter(
+            SubmissionEvent.actor_id == member.id,
+            SubmissionEvent.id > last_event_id,
+        ).order_by(SubmissionEvent.id).all()
+        assert [(e.resource_type, e.action, e.resource_name) for e in events] == [
+            ("software", "submitted", "pkg.zip"),
+            ("document", "submitted", "manual.pdf"),
+            ("software", "withdrawn", "pkg.zip"),
+            ("document", "withdrawn", "manual.pdf"),
+        ]
+
+    # Use the real require_admin dependency for access control, not _client_as's override.
+    from app.web_app import app
+
+    app.dependency_overrides.clear()
+    app.dependency_overrides[require_auth] = lambda: member
+    assert TestClient(app).get("/api/v1/admin/submission-events").status_code == 403
+    app.dependency_overrides[require_auth] = lambda: admin
+    response = TestClient(app).get("/api/v1/admin/submission-events", params={
+        "resource_type": "document", "resource_id": doc_id,
+    })
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total"] == 2
+    assert [item["action"] for item in data["items"]] == ["withdrawn", "submitted"]
+    assert all(item["actor"] != member.phone for item in data["items"])
+
+
+def test_admin_document_upload_has_submission_event(admin):
+    with SessionLocal() as db:
+        last_event_id = db.query(SubmissionEvent.id).order_by(SubmissionEvent.id.desc()).first()
+    last_event_id = last_event_id[0] if last_event_id else 0
+    doc_id = _upload_document(_client_as(admin)).json()["data"]["id"]
+    with SessionLocal() as db:
+        [event] = db.query(SubmissionEvent).filter(
+            SubmissionEvent.id > last_event_id,
+            SubmissionEvent.resource_type == "document", SubmissionEvent.resource_id == doc_id,
+        ).all()
+        assert (event.actor_id, event.action) == (admin.id, "submitted")
+
+
+def test_admin_software_version_upload_has_submission_event(admin):
+    client = _client_as(admin)
+    sw_id = _upload_software(client).json()["data"]["id"]
+    with patch("app.modules.catalog.infrastructure.storage.storage_service.upload_file", return_value=_sw_meta("update.zip")):
+        response = client.post(
+            f"/api/v1/software/{sw_id}/versions",
+            files={"file": ("update.zip", io.BytesIO(b"update"), "application/zip")},
+            data={"version": "2.0"},
+        )
+    assert response.status_code == 200, response.text
+    with SessionLocal() as db:
+        events = db.query(SubmissionEvent).filter(
+            SubmissionEvent.resource_type == "software",
+            SubmissionEvent.resource_id == sw_id,
+            SubmissionEvent.actor_id == admin.id,
+        ).order_by(SubmissionEvent.id).all()
+        assert [(event.action, event.version) for event in events] == [
+            ("submitted", "1.0"), ("version_added", "2.0"),
+        ]

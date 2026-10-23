@@ -311,7 +311,7 @@ async def add_version(software_id: int, file: UploadFile = File(...), version: s
     ctx = catalog(db)
     ver = await run_in_threadpool(
         ctx.add_version.execute,
-        software_id, file.file, file.filename, file.content_type, version,
+        software_id, file.file, file.filename, file.content_type, version, admin.id,
     )
     return ok(ver.to_dict(), "版本已添加")
 

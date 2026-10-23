@@ -26,6 +26,7 @@ import app.shared.models.portal_content  # noqa
 import app.shared.models.slider_challenge  # noqa
 import app.shared.models.sms_code  # noqa
 import app.shared.models.software  # noqa
+import app.shared.models.submission_event  # noqa
 import app.shared.models.sync_log  # noqa
 import app.shared.models.token_blacklist  # noqa
 import app.shared.models.user  # noqa

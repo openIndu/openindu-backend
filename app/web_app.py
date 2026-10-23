@@ -49,6 +49,7 @@ from app.shared.models.portal_content import PortalContent  # noqa: F401
 from app.shared.models.resource_tag import ResourceTag  # noqa: F401
 from app.shared.models.sms_code import SmsCode  # noqa: F401
 from app.shared.models.software import Software, SoftwareVersion  # noqa: F401
+from app.shared.models.submission_event import SubmissionEvent  # noqa: F401
 from app.shared.models.sync_log import SyncLog  # noqa: F401
 from app.shared.models.token_blacklist import TokenBlacklist  # noqa: F401
 from app.shared.models.user import User  # noqa: F401
