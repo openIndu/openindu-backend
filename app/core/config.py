@@ -1,4 +1,5 @@
 """Application settings loaded from environment variables."""
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -58,6 +59,15 @@ class Settings(BaseSettings):
     WEB_PORT: int = 8004
     MCP_PORT: int = 8005
 
+    # Browser origins allowed to call the web API (CORS), comma-separated, each an exact
+    # scheme://host[:port] with no trailing slash. The CORS middleware runs with credentials
+    # on, so wildcards are rejected at startup. Empty = no cross-origin access. The default
+    # is the production sites plus the local dev servers (portal, admin, Vite).
+    CORS_ALLOW_ORIGINS: str = (
+        "https://openindu.com,https://admin.openindu.com,"
+        "http://localhost:3000,http://localhost:3001,http://localhost:5173"
+    )
+
     # OSS path prefixes — override in .env to match your bucket layout
     OSS_DOC_PREFIX: str = "documents"
     OSS_SOFTWARE_PREFIX: str = "soft"
@@ -101,6 +111,20 @@ class Settings(BaseSettings):
     UPLOAD_PRESIGN_EXPIRE_MINUTES: int = 120
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=True)
+
+    @field_validator("CORS_ALLOW_ORIGINS")
+    @classmethod
+    def reject_wildcard_origins(cls, value: str) -> str:
+        # Credentialed CORS cannot use "*", and Starlette matches allow_origins entries
+        # exactly (partial wildcards would silently never match), so fail fast instead.
+        if "*" in value:
+            raise ValueError("CORS_ALLOW_ORIGINS must list explicit origins; wildcards are not supported")
+        return value
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """CORS_ALLOW_ORIGINS as a list, with surrounding blanks and empty items dropped."""
+        return [origin.strip() for origin in self.CORS_ALLOW_ORIGINS.split(",") if origin.strip()]
 
 
 settings = Settings()

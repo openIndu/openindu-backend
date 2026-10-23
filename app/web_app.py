@@ -134,7 +134,7 @@ async def generic_exception_handler(request: Request, exc: Exception):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://openindu.com", "https://admin.openindu.com", "http://localhost:3000", "http://localhost:3001", "http://localhost:5173"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
