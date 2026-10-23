@@ -25,8 +25,13 @@ def imports(path: Path) -> set[str]:
     return names
 
 
+def holds_source(path: Path) -> bool:
+    """A folder that only holds bytecode, left behind when a branch switch removed its modules, is not layout."""
+    return path.is_file() or any(path.rglob("*.py"))
+
+
 def test_app_top_level_stays_grouped():
-    entries = {path.name for path in APP.iterdir() if path.name != "__pycache__"}
+    entries = {path.name for path in APP.iterdir() if path.name != "__pycache__" and holds_source(path)}
     assert entries == APP_ENTRIES, (
         f"extra under app/: {sorted(entries - APP_ENTRIES)}, missing: {sorted(APP_ENTRIES - entries)}; "
         "business code belongs in app/modules and shared code in app/shared"
