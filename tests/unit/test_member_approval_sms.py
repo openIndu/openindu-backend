@@ -73,7 +73,7 @@ class TestApproveSendsSms:
         db = SessionLocal()
         user = _make_pending_user(db)
 
-        with patch("app.membership.infrastructure.repositories.sms_service.send_member_approved", return_value=True) as mock_send:
+        with patch("app.modules.membership.infrastructure.repositories.sms_service.send_member_approved", return_value=True) as mock_send:
             response = _approve(client, user.id)
 
         assert response.status_code == 200
@@ -94,7 +94,7 @@ class TestApproveSendsSms:
         user = _make_pending_user(db)
 
         with patch(
-            "app.membership.infrastructure.repositories.sms_service.send_member_approved",
+            "app.modules.membership.infrastructure.repositories.sms_service.send_member_approved",
             side_effect=RuntimeError("aliyun down"),
         ):
             response = _approve(client, user.id)

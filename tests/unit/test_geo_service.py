@@ -1,8 +1,8 @@
 """Unit tests for IP -> region resolution (analytics context geo module)."""
 import pytest
 
-from app.analytics.infrastructure import geo as geo_service
-from app.analytics.infrastructure.geo import (
+from app.modules.analytics.infrastructure import geo as geo_service
+from app.modules.analytics.infrastructure.geo import (
     _format_cn,
     _province_key,
     lookup_point,

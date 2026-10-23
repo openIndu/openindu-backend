@@ -6,54 +6,6 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.analytics.domain.windows import (
-    CST,
-)
-from app.analytics.domain.windows import (
-    last_30_days_range_utc as _last_30_days_range_utc,
-)
-from app.analytics.domain.windows import (
-    month_range_utc as _month_range_utc,
-)
-from app.analytics.domain.windows import (
-    now_utc as _now,
-)
-from app.analytics.domain.windows import (
-    today_range_utc as _today_range_utc,
-)
-from app.analytics.domain.windows import (
-    trailing_12_months as _trailing_12_months,
-)
-from app.analytics.infrastructure.visit_queries import (
-    cst_day as _cst_day,
-)
-from app.analytics.infrastructure.visit_queries import (
-    cst_month as _cst_month,
-)
-from app.analytics.infrastructure.visit_queries import (
-    geo_distribution as _geo_distribution,
-)
-from app.analytics.infrastructure.visit_queries import (
-    month_new_members_count as _month_new_members_count,
-)
-from app.analytics.infrastructure.visit_queries import (
-    monthly_new_members as _monthly_new_members,
-)
-from app.analytics.infrastructure.visit_queries import (
-    pv_count as _pv_count,
-)
-from app.analytics.infrastructure.visit_queries import (
-    uv_count as _uv_count,
-)
-from app.analytics.infrastructure.visit_queries import (
-    visitor_key as _visitor_key,
-)
-from app.analytics.infrastructure.visit_queries import (
-    yearly_new_members as _yearly_new_members,
-)
-from app.analytics.infrastructure.visit_queries import (
-    yearly_registrations as _yearly_registrations,
-)
 from app.core.dependencies import get_db, require_admin
 from app.core.utils import iso_utc, mask_phone, ok
 from app.models.chat_message import ChatMessage
@@ -62,6 +14,54 @@ from app.models.login_session import LoginSession
 from app.models.software import Software
 from app.models.user import User
 from app.models.visit_event import VisitEvent
+from app.modules.analytics.domain.windows import (
+    CST,
+)
+from app.modules.analytics.domain.windows import (
+    last_30_days_range_utc as _last_30_days_range_utc,
+)
+from app.modules.analytics.domain.windows import (
+    month_range_utc as _month_range_utc,
+)
+from app.modules.analytics.domain.windows import (
+    now_utc as _now,
+)
+from app.modules.analytics.domain.windows import (
+    today_range_utc as _today_range_utc,
+)
+from app.modules.analytics.domain.windows import (
+    trailing_12_months as _trailing_12_months,
+)
+from app.modules.analytics.infrastructure.visit_queries import (
+    cst_day as _cst_day,
+)
+from app.modules.analytics.infrastructure.visit_queries import (
+    cst_month as _cst_month,
+)
+from app.modules.analytics.infrastructure.visit_queries import (
+    geo_distribution as _geo_distribution,
+)
+from app.modules.analytics.infrastructure.visit_queries import (
+    month_new_members_count as _month_new_members_count,
+)
+from app.modules.analytics.infrastructure.visit_queries import (
+    monthly_new_members as _monthly_new_members,
+)
+from app.modules.analytics.infrastructure.visit_queries import (
+    pv_count as _pv_count,
+)
+from app.modules.analytics.infrastructure.visit_queries import (
+    uv_count as _uv_count,
+)
+from app.modules.analytics.infrastructure.visit_queries import (
+    visitor_key as _visitor_key,
+)
+from app.modules.analytics.infrastructure.visit_queries import (
+    yearly_new_members as _yearly_new_members,
+)
+from app.modules.analytics.infrastructure.visit_queries import (
+    yearly_registrations as _yearly_registrations,
+)
 
 router = APIRouter(prefix="/stats")
 

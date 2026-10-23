@@ -6,9 +6,9 @@ from sqlalchemy.orm import Session
 from app.core.audit import self_audited
 from app.core.dependencies import get_db, require_admin, require_auth
 from app.core.utils import iso_utc, mask_phone, ok
-from app.membership.application.review import ApplicationView
-from app.membership.provider import membership
 from app.models.user import User
+from app.modules.membership.application.review import ApplicationView
+from app.modules.membership.provider import membership
 
 router = APIRouter()
 

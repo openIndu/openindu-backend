@@ -6,7 +6,7 @@ from datetime import datetime
 import pytest
 
 from app.domain.auth import AuthError, BizCode
-from app.identity.application.authenticate import AuthenticateBySms, AuthenticationIntent
+from app.modules.identity.application.authenticate import AuthenticateBySms, AuthenticationIntent
 
 
 @dataclass

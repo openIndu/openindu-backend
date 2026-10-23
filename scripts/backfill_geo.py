@@ -20,12 +20,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from app.services.geo_service import _get_searcher, resolve_ip_geo
 from sqlalchemy import func, or_, select, update
 
 from app.core.database import SessionLocal
 from app.models.login_session import LoginSession
 from app.models.visit_event import VisitEvent
-from app.services.geo_service import _get_searcher, resolve_ip_geo
 
 
 def reconcile(session, model, has_country_code: bool, apply: bool) -> int:

@@ -1,5 +1,5 @@
 """Behavior tests for the analytics TrackVisit use case."""
-from app.analytics.application.track_visit import TrackVisit
+from app.modules.analytics.application.track_visit import TrackVisit
 
 
 class FakeSink:

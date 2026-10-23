@@ -4,14 +4,14 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.catalog.application.admin import VersionCriteria
-from app.catalog.provider import catalog
 from app.core.audit import add_audit_detail
 from app.core.dependencies import get_current_user, get_db, require_admin, require_member
 from app.core.utils import iso_utc, ok
 from app.models.resource_tag import ResourceTag
 from app.models.software import Software, SoftwareVersion
 from app.models.user import User
+from app.modules.catalog.application.admin import VersionCriteria
+from app.modules.catalog.provider import catalog
 
 router = APIRouter(prefix="/software")
 

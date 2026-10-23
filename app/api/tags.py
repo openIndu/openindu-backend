@@ -4,14 +4,14 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.catalog.domain.tag_rules import VALID_TAG_TYPES
-from app.catalog.provider import catalog
 from app.core.dependencies import get_db, require_admin
 from app.core.utils import ok
 from app.models.document import Document
 from app.models.resource_tag import ResourceTag
 from app.models.software import Software
 from app.models.user import User
+from app.modules.catalog.domain.tag_rules import VALID_TAG_TYPES
+from app.modules.catalog.provider import catalog
 
 router = APIRouter(prefix="/tags")
 

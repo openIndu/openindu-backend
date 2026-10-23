@@ -5,16 +5,16 @@ import json
 import pytest
 
 from app.domain.knowledge import KnowledgeCode, KnowledgeError
-from app.knowledge.application.answering import StreamAnswer
-from app.knowledge.application.consultation import (
+from app.modules.knowledge.application.answering import StreamAnswer
+from app.modules.knowledge.application.consultation import (
     EnsureChatQuota,
     RecordConsultation,
     RecordUserTurn,
     RetrieveChunks,
     persist_after_stream,
 )
-from app.knowledge.application.retrieval import Retriever
-from app.knowledge.application.sessions import (
+from app.modules.knowledge.application.retrieval import Retriever
+from app.modules.knowledge.application.sessions import (
     DeleteChatSession,
     EnsureOwnSession,
     RenameChatSession,

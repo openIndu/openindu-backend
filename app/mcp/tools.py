@@ -1,6 +1,6 @@
 """MCP tool definitions aligned with document categories."""
 from app.core.database import SessionLocal
-from app.knowledge.infrastructure.milvus import milvus_service
+from app.modules.knowledge.infrastructure.milvus import milvus_service
 
 
 def _search(keyword: str, top_k: int, brand: str | None = None, category: str | None = None):
